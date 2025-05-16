@@ -31,38 +31,33 @@ public final class FishingRodKnockbackHandler {
         Player owner = hook.getOwner() instanceof Player p ? p : null;
         if (owner == null || !target.isAttackable()) return;
 
-        /* ---------- 1. звук + «красный флэш» без урона ---------- */
+        /* ---------- 1. sweep-sound + red flash (no damage) ---------- */
         owner.level().playSound(null, target.getX(), target.getY(), target.getZ(),
                 SoundEvents.PLAYER_ATTACK_SWEEP, SoundSource.PLAYERS, 1.0F, 1.0F);
 
         if (target instanceof LivingEntity living) {
-            // «ручной» флэш, 10 тиков как в vanilla-ударе
             living.hurtTime = 10;
             living.hurtDuration = 10;
             living.hurtMarked = true;
         }
 
-        /* ---------- 2. классический нокаут ---------- */
+        /* ---------- 2. knock-back (1.7-style) ----------------------- */
         boolean strong = owner.isSprinting() && ClassicPvpHandler.takeReady(owner);
         float kb = strong ? KB_SPRINT : KB_NORMAL;
 
-        double yaw = Math.toRadians(owner.getYRot());
-        double xRatio = -Math.sin(yaw);
-        double zRatio = Math.cos(yaw);
-        double dx = xRatio * kb;
-        double dz = zRatio * kb;
+        double yawRad = Math.toRadians(owner.getYRot());
+        double xRatio = Math.sin(yawRad);   // correct sign
+        double zRatio = -Math.cos(yawRad);   // correct sign
 
         if (target instanceof LivingEntity livingEntity) {
-            // используем встроенный метод knockback для нормального отбрасывания
             livingEntity.knockback(kb, xRatio, zRatio);
-            // добавляем небольшую вертикальную составляющую, как в vanilla-ударе
             livingEntity.setDeltaMovement(
-                    livingEntity.getDeltaMovement().add(0.0D, 0.1D, 0.0D)
-            );
+                    livingEntity.getDeltaMovement().add(0.0D, 0.1D, 0.0D));
             livingEntity.hurtMarked = true;
         } else {
-            // для прочих сущностей — fallback на старый вариант
-            target.setDeltaMovement(target.getDeltaMovement().add(dx, 0.1D, dz));
+            // fallback for non-living entities
+            target.setDeltaMovement(
+                    target.getDeltaMovement().add(xRatio * kb, 0.1D, zRatio * kb));
             target.hurtMarked = true;
         }
     }
