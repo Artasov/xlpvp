@@ -48,7 +48,7 @@ public final class FishingRodKnockbackHandler {
         double yawRad = Math.toRadians(owner.getYRot());
         double xRatio = Math.sin(yawRad);   // correct sign
         double zRatio = -Math.cos(yawRad);   // correct sign
-        double vDelta = 0.6D;
+        double vDelta = 0.06D;
         if (target instanceof LivingEntity livingEntity) {
             livingEntity.knockback(kb, xRatio, zRatio);
             livingEntity.setDeltaMovement(livingEntity.getDeltaMovement().add(0.0D, vDelta, 0.0D));
