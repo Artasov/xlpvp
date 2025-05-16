@@ -48,15 +48,15 @@ public final class FishingRodKnockbackHandler {
         double yawRad = Math.toRadians(owner.getYRot());
         double xRatio = Math.sin(yawRad);   // correct sign
         double zRatio = -Math.cos(yawRad);   // correct sign
-
+        double vDelta = 0.6D;
         if (target instanceof LivingEntity livingEntity) {
             livingEntity.knockback(kb, xRatio, zRatio);
-            livingEntity.setDeltaMovement(livingEntity.getDeltaMovement().add(0.0D, 0.1D, 0.0D));
+            livingEntity.setDeltaMovement(livingEntity.getDeltaMovement().add(0.0D, vDelta, 0.0D));
             livingEntity.hurtMarked = true;
         } else {
             // fallback for non-living entities
             target.setDeltaMovement(
-                    target.getDeltaMovement().add(xRatio * kb, 0.1D, zRatio * kb));
+                    target.getDeltaMovement().add(xRatio * kb, vDelta, zRatio * kb));
             target.hurtMarked = true;
         }
     }
