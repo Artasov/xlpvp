@@ -51,8 +51,7 @@ public final class FishingRodKnockbackHandler {
 
         if (target instanceof LivingEntity livingEntity) {
             livingEntity.knockback(kb, xRatio, zRatio);
-            livingEntity.setDeltaMovement(
-                    livingEntity.getDeltaMovement().add(0.0D, 0.1D, 0.0D));
+            livingEntity.setDeltaMovement(livingEntity.getDeltaMovement().add(0.0D, 0.1D, 0.0D));
             livingEntity.hurtMarked = true;
         } else {
             // fallback for non-living entities
