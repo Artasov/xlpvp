@@ -56,6 +56,15 @@ public final class ClassicPvpHandler {
     private record Vec(double x, double z) {
     }
 
+    /**
+     * Выдаёт коэфф. KB, компенсируя {@code generic.knockback_resistance}.
+     */
+    public static float adjustKnockback(float desired, LivingEntity ent) {
+        double resist = Math.max(0.0, ent.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE));
+        if (resist >= 1.0) return 0.0F;                // полное сопротивление — остаётся «0»
+        return (float) (desired / (1.0 - resist));     // масштабируем вверх
+    }
+
     @SubscribeEvent
     public static void onTickPre(PlayerTickEvent.Pre e) {
         Player p = e.getEntity();
@@ -93,13 +102,15 @@ public final class ClassicPvpHandler {
 
     @SubscribeEvent
     public static void onKnockback(LivingKnockBackEvent e) {
-        Vec dir = EXTRA_KB.remove(e.getEntity().getUUID());
-        if (dir == null) {                      // усиления нет
-            e.setStrength(KB_NORMAL);
-            return;
+        LivingEntity victim = e.getEntity();
+        Vec dir = EXTRA_KB.remove(victim.getUUID());
+
+        float desired = (dir == null ? KB_NORMAL : KB_SPRINT);
+        e.setStrength(adjustKnockback(desired, victim));
+
+        if (dir != null) {
+            e.setRatioX(dir.x);
+            e.setRatioZ(dir.z);
         }
-        e.setStrength(KB_SPRINT);
-        e.setRatioX(dir.x);
-        e.setRatioZ(dir.z);
     }
 }

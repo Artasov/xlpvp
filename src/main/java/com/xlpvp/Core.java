@@ -1,5 +1,6 @@
 package com.xlpvp;
 
+import com.xlpvp.main.speed.SpeedMod;
 import net.neoforged.fml.common.Mod;
 
 /**
@@ -9,4 +10,7 @@ import net.neoforged.fml.common.Mod;
 public final class Core {
     public static final String MODID = "xlpvp";
 
+    public Core() {
+        new SpeedMod();
+    }
 }
