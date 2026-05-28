@@ -1,6 +1,8 @@
 package com.xlpvp.main;
 
 import com.xlpvp.Core;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -28,6 +30,11 @@ public final class FishingRodKnockbackHandler {
         Entity target = eh.getEntity();
         Player owner = hook.getOwner() instanceof Player p ? p : null;
         if (owner == null || !target.isAttackable()) return;
+
+        if (!owner.level().isClientSide()) {
+            owner.level().playSound(null, target.getX(), target.getY(), target.getZ(),
+                    SoundEvents.PLAYER_HURT, SoundSource.PLAYERS, 1.0F, 1.0F);
+        }
 
         if (target instanceof LivingEntity living) {
             living.hurtTime = 10;
