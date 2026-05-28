@@ -1,5 +1,5 @@
 {
-  "anvil_cost": 50,
+  "anvil_cost": 4,
   "description": {
     "translate": "enchantment.xlpvp.speed"
   },
@@ -18,13 +18,13 @@
     ]
   },
   "max_cost": {
-    "base": 1000100,
-    "per_level_above_first": 0
+    "base": 65,
+    "per_level_above_first": 10
   },
   "max_level": 3,
   "min_cost": {
-    "base": 1000000,
-    "per_level_above_first": 0
+    "base": 25,
+    "per_level_above_first": 5
   },
   "slots": [
     "feet"
