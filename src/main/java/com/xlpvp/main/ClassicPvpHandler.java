@@ -34,6 +34,14 @@ public final class ClassicPvpHandler {
         applyFastAttack(e.getEntity());
     }
 
+    @SubscribeEvent
+    public static void onLogout(PlayerEvent.PlayerLoggedOutEvent e) {
+        UUID id = e.getEntity().getUUID();
+        READY.remove(id);
+        PREV_SPRINT.remove(id);
+        EXTRA_KB.remove(id);
+    }
+
     private static void applyFastAttack(Player p) {
         AttributeInstance attr = p.getAttribute(Attributes.ATTACK_SPEED);
         if (attr != null && attr.getBaseValue() < OLD_PVP_ATTACK_SPEED) {
@@ -81,8 +89,20 @@ public final class ClassicPvpHandler {
     }
 
     public static boolean takeReady(Player p) {
-        READY.compute(p.getUUID(), (k, v) -> v != null && v);
-        return !READY.get(p.getUUID());
+        UUID id = p.getUUID();
+        if (!p.isSprinting()) {
+            READY.put(id, false);
+            return false;
+        }
+
+        boolean ready = READY.getOrDefault(id, false);
+        if (!ready && !PREV_SPRINT.getOrDefault(id, false)) {
+            ready = true;
+            PREV_SPRINT.put(id, true);
+        }
+
+        READY.put(id, false);
+        return ready;
     }
 
     @SubscribeEvent
