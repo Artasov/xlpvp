@@ -23,6 +23,7 @@ public final class ClassicPvpHandler {
     /* ---------- 1. мгновенный удар ---------- */
 
     private static final double OLD_PVP_ATTACK_SPEED = 20.0D;
+    private static final long OLD_PVP_HIT_DELAY_TICKS = 10L;
 
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent e) {
@@ -41,6 +42,7 @@ public final class ClassicPvpHandler {
         PREV_SPRINT.remove(id);
         EXTRA_KB.remove(id);
         SUPPRESS_NEXT_KB.remove(id);
+        LAST_ACCEPTED_ATTACK.remove(id);
     }
 
     private static void applyFastAttack(Player p) {
@@ -52,8 +54,8 @@ public final class ClassicPvpHandler {
 
     /* ---------- old pvp 1.7.10 с W-/S-tap ---------- */
 
-    private static final float KB_NORMAL = 0.4F;
-    private static final float KB_SPRINT = 0.8F;
+    private static final float KB_NORMAL = 0.408F;
+    private static final float KB_SPRINT = 0.816F;
 
 
     private static final Map<UUID, Boolean> READY = new ConcurrentHashMap<>();
@@ -63,6 +65,8 @@ public final class ClassicPvpHandler {
     private static final Map<UUID, Vec> EXTRA_KB = new ConcurrentHashMap<>();
 
     private static final Map<UUID, Long> SUPPRESS_NEXT_KB = new ConcurrentHashMap<>();
+
+    private static final Map<UUID, Long> LAST_ACCEPTED_ATTACK = new ConcurrentHashMap<>();
 
     private record Vec(double x, double z, long gameTime) {
     }
@@ -106,6 +110,22 @@ public final class ClassicPvpHandler {
 
         READY.put(id, false);
         return ready;
+    }
+
+    public static boolean acceptClassicAttack(Player player) {
+        if (player.level().isClientSide) {
+            return true;
+        }
+
+        UUID playerId = player.getUUID();
+        long gameTime = player.level().getGameTime();
+        Long lastHit = LAST_ACCEPTED_ATTACK.get(playerId);
+        if (lastHit != null && gameTime >= lastHit && gameTime - lastHit < OLD_PVP_HIT_DELAY_TICKS) {
+            return false;
+        }
+
+        LAST_ACCEPTED_ATTACK.put(playerId, gameTime);
+        return true;
     }
 
     @SubscribeEvent

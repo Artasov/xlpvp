@@ -2,6 +2,9 @@
   "required": true,
   "package": "com.xlpvp.mixin",
   "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "PlayerAttackMixin"
+  ],
   "client": [
     "AnvilScreenMixin"
   ],

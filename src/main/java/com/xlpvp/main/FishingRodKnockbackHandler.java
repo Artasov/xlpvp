@@ -21,7 +21,7 @@ import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 @EventBusSubscriber(modid = Core.MODID)
 public final class FishingRodKnockbackHandler {
 
-    private static final float ROD_KB = 0.5F;
+    private static final float ROD_KB = 0.4F;
     private static final double VERTICAL_DELTA = 0.05D;
 
     @SubscribeEvent
