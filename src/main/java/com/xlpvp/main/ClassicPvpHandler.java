@@ -40,6 +40,7 @@ public final class ClassicPvpHandler {
         READY.remove(id);
         PREV_SPRINT.remove(id);
         EXTRA_KB.remove(id);
+        SUPPRESS_NEXT_KB.remove(id);
     }
 
     private static void applyFastAttack(Player p) {
@@ -61,7 +62,9 @@ public final class ClassicPvpHandler {
 
     private static final Map<UUID, Vec> EXTRA_KB = new ConcurrentHashMap<>();
 
-    private record Vec(double x, double z) {
+    private static final Map<UUID, Long> SUPPRESS_NEXT_KB = new ConcurrentHashMap<>();
+
+    private record Vec(double x, double z, long gameTime) {
     }
 
     /**
@@ -117,13 +120,25 @@ public final class ClassicPvpHandler {
         boolean strong = attacker.isSprinting() && takeReady(attacker);
         if (!strong) return;                    // обычный удар — KB не трогаем
         double yaw = Math.toRadians(attacker.getYRot());
-        EXTRA_KB.put(target.getUUID(), new Vec(-Math.sin(yaw), Math.cos(yaw)));
+        EXTRA_KB.put(target.getUUID(), new Vec(Math.sin(yaw), -Math.cos(yaw), attacker.level().getGameTime()));
     }
 
     @SubscribeEvent
     public static void onKnockback(LivingKnockBackEvent e) {
         LivingEntity victim = e.getEntity();
-        Vec dir = EXTRA_KB.remove(victim.getUUID());
+        UUID victimId = victim.getUUID();
+        long gameTime = victim.level().getGameTime();
+
+        Long suppressGameTime = SUPPRESS_NEXT_KB.remove(victimId);
+        if (suppressGameTime != null && suppressGameTime == gameTime) {
+            e.setCanceled(true);
+            return;
+        }
+
+        Vec dir = EXTRA_KB.remove(victimId);
+        if (dir != null && dir.gameTime() != gameTime) {
+            dir = null;
+        }
 
         float desired = (dir == null ? KB_NORMAL : KB_SPRINT);
         e.setStrength(adjustKnockback(desired, victim));
@@ -131,6 +146,7 @@ public final class ClassicPvpHandler {
         if (dir != null) {
             e.setRatioX(dir.x);
             e.setRatioZ(dir.z);
+            SUPPRESS_NEXT_KB.put(victimId, gameTime);
         }
     }
 }
