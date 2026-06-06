@@ -3,6 +3,7 @@
   "package": "com.xlpvp.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "FishingHookMixin",
     "PlayerAttackMixin"
   ],
   "client": [

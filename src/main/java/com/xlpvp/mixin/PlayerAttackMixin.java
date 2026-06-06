@@ -14,8 +14,16 @@ public abstract class PlayerAttackMixin {
 
     @Inject(method = "attack", at = @At("HEAD"), cancellable = true)
     private void xlpvp$limitClassicAttack(Entity target, CallbackInfo ci) {
-        if (target instanceof LivingEntity && !ClassicPvpHandler.acceptClassicAttack((Player) (Object) this)) {
-            ci.cancel();
+        Player player = (Player) (Object) this;
+        if (target instanceof LivingEntity livingTarget) {
+            if (!ClassicPvpHandler.canReachClassicTarget(player, livingTarget)) {
+                ci.cancel();
+                return;
+            }
+
+            if (!ClassicPvpHandler.acceptClassicAttack(player)) {
+                ci.cancel();
+            }
         }
     }
 }

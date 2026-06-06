@@ -21,8 +21,8 @@ import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 @EventBusSubscriber(modid = Core.MODID)
 public final class FishingRodKnockbackHandler {
 
-    private static final float ROD_KB = 0.4F;
-    private static final double VERTICAL_DELTA = 0.05D;
+    private static final float ROD_KB = 0.408F;
+    private static final double NON_LIVING_VERTICAL_DELTA = 0.1D;
 
     @SubscribeEvent
     public static void onBobberImpact(ProjectileImpactEvent evt) {
@@ -35,11 +35,10 @@ public final class FishingRodKnockbackHandler {
         Entity target = eh.getEntity();
         Player owner = hook.getOwner() instanceof Player p ? p : null;
         if (owner == null || !target.isAttackable()) return;
+        if (owner.level().isClientSide()) return;
 
-        if (!owner.level().isClientSide()) {
-            owner.level().playSound(null, target.getX(), target.getY(), target.getZ(),
-                    SoundEvents.PLAYER_HURT, SoundSource.PLAYERS, 1.0F, 1.0F);
-        }
+        owner.level().playSound(null, target.getX(), target.getY(), target.getZ(),
+                SoundEvents.PLAYER_HURT, SoundSource.PLAYERS, 1.0F, 1.0F);
 
         if (target instanceof LivingEntity living) {
             living.hurtTime = 10;
@@ -53,12 +52,11 @@ public final class FishingRodKnockbackHandler {
         Vec3 oldMovement = target.getDeltaMovement();
         if (target instanceof LivingEntity livingEntity) {
             applyRodKnockback(livingEntity, xRatio, zRatio);
-            livingEntity.setDeltaMovement(livingEntity.getDeltaMovement().add(0.0D, VERTICAL_DELTA, 0.0D));
             livingEntity.hurtMarked = true;
         } else {
             // fallback for non-living entities
             target.setDeltaMovement(
-                    target.getDeltaMovement().add(-xRatio * ROD_KB, VERTICAL_DELTA, -zRatio * ROD_KB));
+                    target.getDeltaMovement().add(-xRatio * ROD_KB, NON_LIVING_VERTICAL_DELTA, -zRatio * ROD_KB));
             target.hurtMarked = true;
         }
         sendMotionNow(target, oldMovement);

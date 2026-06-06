@@ -24,6 +24,7 @@ public final class ClassicPvpHandler {
 
     private static final double OLD_PVP_ATTACK_SPEED = 20.0D;
     private static final long OLD_PVP_HIT_DELAY_TICKS = 10L;
+    private static final double OLD_PVP_REACH_EXTRA = 0.35D;
 
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent e) {
@@ -126,6 +127,10 @@ public final class ClassicPvpHandler {
 
         LAST_ACCEPTED_ATTACK.put(playerId, gameTime);
         return true;
+    }
+
+    public static boolean canReachClassicTarget(Player player, LivingEntity target) {
+        return player.canInteractWithEntity(target.getBoundingBox(), OLD_PVP_REACH_EXTRA);
     }
 
     @SubscribeEvent
