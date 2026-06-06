@@ -25,6 +25,7 @@ public final class ClassicPvpHandler {
 
     private static final double OLD_PVP_ATTACK_SPEED = 20.0D;
     private static final double OLD_PVP_REACH_EXTRA = 0.0D;
+    private static final long OLD_PVP_HIT_LOCK_TICKS = 10L;
 
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent e) {
@@ -43,6 +44,7 @@ public final class ClassicPvpHandler {
         PREV_SPRINT.remove(id);
         ATTACK_KB.remove(id);
         SUPPRESS_NEXT_KB.remove(id);
+        LAST_PVP_HIT.remove(id);
     }
 
     private static void applyFastAttack(Player p) {
@@ -65,6 +67,8 @@ public final class ClassicPvpHandler {
     private static final Map<UUID, AttackKnockback> ATTACK_KB = new ConcurrentHashMap<>();
 
     private static final Map<UUID, Long> SUPPRESS_NEXT_KB = new ConcurrentHashMap<>();
+
+    private static final Map<UUID, Long> LAST_PVP_HIT = new ConcurrentHashMap<>();
 
     private record AttackKnockback(UUID attackerId, boolean strong, double x, double z, long gameTime) {
     }
@@ -114,6 +118,26 @@ public final class ClassicPvpHandler {
         return player.canInteractWithEntity(target.getBoundingBox(), OLD_PVP_REACH_EXTRA);
     }
 
+    public static boolean isClassicPvpHitLocked(Player target) {
+        UUID targetId = target.getUUID();
+        Long lastHitTime = LAST_PVP_HIT.get(targetId);
+        if (lastHitTime == null) {
+            return false;
+        }
+
+        long gameTime = target.level().getGameTime();
+        if (gameTime - lastHitTime < OLD_PVP_HIT_LOCK_TICKS) {
+            return true;
+        }
+
+        LAST_PVP_HIT.remove(targetId, lastHitTime);
+        return false;
+    }
+
+    public static void markClassicPvpHit(Player target) {
+        LAST_PVP_HIT.put(target.getUUID(), target.level().getGameTime());
+    }
+
     public static boolean hasQueuedSprintKnockback(Player attacker, Player target) {
         AttackKnockback knockback = ATTACK_KB.get(target.getUUID());
         return knockback != null
@@ -131,6 +155,10 @@ public final class ClassicPvpHandler {
             return;
         }
         if (!(e.getTarget() instanceof Player target)) return;
+        if (isClassicPvpHitLocked(target)) {
+            e.setCanceled(true);
+            return;
+        }
         boolean strong = attacker.isSprinting() && takeReady(attacker);
         double yaw = Math.toRadians(attacker.getYRot());
         ATTACK_KB.put(
@@ -179,6 +207,9 @@ public final class ClassicPvpHandler {
             movement.z / 2.0D - knockbackVector.z
         );
         victim.hurtMarked = true;
+        if (victim instanceof Player target) {
+            markClassicPvpHit(target);
+        }
         SUPPRESS_NEXT_KB.put(victimId, gameTime);
     }
 }

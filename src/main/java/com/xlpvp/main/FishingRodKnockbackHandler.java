@@ -36,6 +36,9 @@ public final class FishingRodKnockbackHandler {
         Player owner = hook.getOwner() instanceof Player p ? p : null;
         if (owner == null || !target.isAttackable()) return;
         if (owner.level().isClientSide()) return;
+        if (target instanceof Player targetPlayer && ClassicPvpHandler.isClassicPvpHitLocked(targetPlayer)) {
+            return;
+        }
 
         owner.level().playSound(null, target.getX(), target.getY(), target.getZ(),
                 SoundEvents.PLAYER_HURT, SoundSource.PLAYERS, 1.0F, 1.0F);
@@ -60,6 +63,9 @@ public final class FishingRodKnockbackHandler {
             target.hurtMarked = true;
         }
         sendMotionNow(target, oldMovement);
+        if (target instanceof Player targetPlayer) {
+            ClassicPvpHandler.markClassicPvpHit(targetPlayer);
+        }
     }
 
     private static void applyRodKnockback(LivingEntity livingEntity, double xRatio, double zRatio) {
