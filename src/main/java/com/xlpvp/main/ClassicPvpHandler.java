@@ -24,7 +24,7 @@ public final class ClassicPvpHandler {
     /* ---------- 1. мгновенный удар ---------- */
 
     private static final double OLD_PVP_ATTACK_SPEED = 20.0D;
-    private static final double OLD_PVP_REACH_EXTRA = 0.2D;
+    private static final double OLD_PVP_REACH_EXTRA = 0.0D;
 
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent e) {
