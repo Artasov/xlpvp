@@ -5,6 +5,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
@@ -40,7 +41,7 @@ public final class ClassicPvpHandler {
         UUID id = e.getEntity().getUUID();
         READY.remove(id);
         PREV_SPRINT.remove(id);
-        EXTRA_KB.remove(id);
+        ATTACK_KB.remove(id);
         SUPPRESS_NEXT_KB.remove(id);
     }
 
@@ -61,11 +62,11 @@ public final class ClassicPvpHandler {
 
     private static final Map<UUID, Boolean> PREV_SPRINT = new ConcurrentHashMap<>();
 
-    private static final Map<UUID, Vec> EXTRA_KB = new ConcurrentHashMap<>();
+    private static final Map<UUID, AttackKnockback> ATTACK_KB = new ConcurrentHashMap<>();
 
     private static final Map<UUID, Long> SUPPRESS_NEXT_KB = new ConcurrentHashMap<>();
 
-    private record Vec(double x, double z, long gameTime) {
+    private record AttackKnockback(UUID attackerId, boolean strong, double x, double z, long gameTime) {
     }
 
     /**
@@ -113,6 +114,14 @@ public final class ClassicPvpHandler {
         return player.canInteractWithEntity(target.getBoundingBox(), OLD_PVP_REACH_EXTRA);
     }
 
+    public static boolean hasQueuedSprintKnockback(Player attacker, Player target) {
+        AttackKnockback knockback = ATTACK_KB.get(target.getUUID());
+        return knockback != null
+            && knockback.strong()
+            && knockback.attackerId().equals(attacker.getUUID())
+            && knockback.gameTime() == attacker.level().getGameTime();
+    }
+
     @SubscribeEvent
     public static void onAttackEntity(AttackEntityEvent e) {
         Player attacker = e.getEntity();
@@ -121,11 +130,13 @@ public final class ClassicPvpHandler {
             e.setCanceled(true);
             return;
         }
-        if (!(e.getTarget() instanceof LivingEntity target)) return;
+        if (!(e.getTarget() instanceof Player target)) return;
         boolean strong = attacker.isSprinting() && takeReady(attacker);
-        if (!strong) return;                    // обычный удар — KB не трогаем
         double yaw = Math.toRadians(attacker.getYRot());
-        EXTRA_KB.put(target.getUUID(), new Vec(Math.sin(yaw), -Math.cos(yaw), attacker.level().getGameTime()));
+        ATTACK_KB.put(
+            target.getUUID(),
+            new AttackKnockback(attacker.getUUID(), strong, Math.sin(yaw), -Math.cos(yaw), attacker.level().getGameTime())
+        );
     }
 
     @SubscribeEvent
@@ -140,18 +151,34 @@ public final class ClassicPvpHandler {
             return;
         }
 
-        Vec dir = EXTRA_KB.remove(victimId);
-        if (dir != null && dir.gameTime() != gameTime) {
-            dir = null;
+        AttackKnockback knockback = ATTACK_KB.remove(victimId);
+        if (knockback == null || knockback.gameTime() != gameTime) {
+            return;
         }
 
-        float desired = (dir == null ? KB_NORMAL : KB_SPRINT);
-        e.setStrength(adjustKnockback(desired, victim));
+        e.setCanceled(true);
 
-        if (dir != null) {
-            e.setRatioX(dir.x);
-            e.setRatioZ(dir.z);
-            SUPPRESS_NEXT_KB.put(victimId, gameTime);
+        float desired = knockback.strong() ? KB_SPRINT : KB_NORMAL;
+        if (victim.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE) >= 1.0D) {
+            return;
         }
+
+        double ratioX = knockback.strong() ? knockback.x() : e.getOriginalRatioX();
+        double ratioZ = knockback.strong() ? knockback.z() : e.getOriginalRatioZ();
+        while (ratioX * ratioX + ratioZ * ratioZ < 1.0E-5F) {
+            ratioX = (Math.random() - Math.random()) * 0.01D;
+            ratioZ = (Math.random() - Math.random()) * 0.01D;
+        }
+
+        victim.hasImpulse = true;
+        Vec3 movement = victim.getDeltaMovement();
+        Vec3 knockbackVector = new Vec3(ratioX, 0.0D, ratioZ).normalize().scale(desired);
+        victim.setDeltaMovement(
+            movement.x / 2.0D - knockbackVector.x,
+            Math.min(0.4D, movement.y / 2.0D + desired),
+            movement.z / 2.0D - knockbackVector.z
+        );
+        victim.hurtMarked = true;
+        SUPPRESS_NEXT_KB.put(victimId, gameTime);
     }
 }
