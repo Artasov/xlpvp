@@ -18,11 +18,6 @@ public abstract class PlayerAttackMixin {
         if (target instanceof LivingEntity livingTarget) {
             if (!ClassicPvpHandler.canReachClassicTarget(player, livingTarget)) {
                 ci.cancel();
-                return;
-            }
-
-            if (!ClassicPvpHandler.acceptClassicAttack(player)) {
-                ci.cancel();
             }
         }
     }
