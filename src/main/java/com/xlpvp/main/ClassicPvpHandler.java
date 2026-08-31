@@ -1,6 +1,7 @@
 package com.xlpvp.main;
 
 import com.xlpvp.Core;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -29,20 +30,36 @@ public final class ClassicPvpHandler {
 
     @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent e) {
-        applyFastAttack(e.getEntity());
+        Player player = e.getEntity();
+        clearCombatState(player.getUUID());
+        applyFastAttack(player);
     }
 
     @SubscribeEvent
     public static void onClone(PlayerEvent.Clone e) {
+        clearCombatState(e.getOriginal().getUUID());
+        clearCombatState(e.getEntity().getUUID());
         applyFastAttack(e.getEntity());
     }
 
     @SubscribeEvent
     public static void onLogout(PlayerEvent.PlayerLoggedOutEvent e) {
-        UUID id = e.getEntity().getUUID();
+        clearCombatState(e.getEntity().getUUID());
+    }
+
+    @SubscribeEvent
+    public static void onChangedDimension(PlayerEvent.PlayerChangedDimensionEvent e) {
+        Player player = e.getEntity();
+        clearCombatState(player.getUUID());
+        player.stopUsingItem();
+    }
+
+    private static void clearCombatState(UUID id) {
         READY.remove(id);
         PREV_SPRINT.remove(id);
-        ATTACK_KB.remove(id);
+        ATTACK_KB.entrySet().removeIf(entry ->
+            entry.getKey().equals(id) || entry.getValue().attackerId().equals(id)
+        );
         SUPPRESS_NEXT_KB.remove(id);
         LAST_PVP_HIT.remove(id);
     }
@@ -120,22 +137,39 @@ public final class ClassicPvpHandler {
 
     public static boolean isClassicPvpHitLocked(Player target) {
         UUID targetId = target.getUUID();
-        Long lastHitTime = LAST_PVP_HIT.get(targetId);
-        if (lastHitTime == null) {
+        Long lastHitTick = LAST_PVP_HIT.get(targetId);
+        if (lastHitTick == null) {
             return false;
         }
 
-        long gameTime = target.level().getGameTime();
-        if (gameTime - lastHitTime < OLD_PVP_HIT_LOCK_TICKS) {
+        long serverTick = getServerTick(target);
+        if (serverTick == Long.MIN_VALUE) {
+            LAST_PVP_HIT.remove(targetId, lastHitTick);
+            return false;
+        }
+
+        long elapsedTicks = serverTick - lastHitTick;
+        if (elapsedTicks >= 0L && elapsedTicks < OLD_PVP_HIT_LOCK_TICKS) {
             return true;
         }
 
-        LAST_PVP_HIT.remove(targetId, lastHitTime);
+        LAST_PVP_HIT.remove(targetId, lastHitTick);
         return false;
     }
 
     public static void markClassicPvpHit(Player target) {
-        LAST_PVP_HIT.put(target.getUUID(), target.level().getGameTime());
+        long serverTick = getServerTick(target);
+        if (serverTick != Long.MIN_VALUE) {
+            LAST_PVP_HIT.put(target.getUUID(), serverTick);
+        }
+    }
+
+    private static long getServerTick(Player player) {
+        if (!(player.level() instanceof ServerLevel serverLevel)) {
+            return Long.MIN_VALUE;
+        }
+
+        return Integer.toUnsignedLong(serverLevel.getServer().getTickCount());
     }
 
     public static boolean hasQueuedSprintKnockback(Player attacker, Player target) {

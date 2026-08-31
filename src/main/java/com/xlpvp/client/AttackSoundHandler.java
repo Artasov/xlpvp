@@ -24,13 +24,13 @@ public final class AttackSoundHandler {
     private static final String VANILLA_ATTACK_PREFIX = "minecraft:entity.player.attack.";
     private static final String VANILLA_ATTACK_NODAMAGE = VANILLA_ATTACK_PREFIX + "nodamage";
     private static final String VANILLA_PLAYER_HURT = "minecraft:entity.player.hurt";
-    private static final long OLD_PVP_HIT_DELAY_TICKS = 10L;
+    private static final long OLD_PVP_HIT_DELAY_NANOS = 10L * 50_000_000L;
     private static final long LOCAL_ATTACK_SOUND_WINDOW_NANOS = 100_000_000L;
     private static final long SERVER_HURT_SUPPRESS_WINDOW_NANOS = 600_000_000L;
     private static final double SERVER_HURT_SUPPRESS_DISTANCE_SQ = 2.25D;
     private static final Deque<PredictedHurtSound> LOCAL_ATTACKS = new ArrayDeque<>();
     private static final Deque<PredictedHurtSound> LOCAL_HURT_SOUNDS = new ArrayDeque<>();
-    private static long lastLocalAttackTick = Long.MIN_VALUE;
+    private static long lastLocalAttackNanos = Long.MIN_VALUE;
 
     private AttackSoundHandler() {
     }
@@ -41,13 +41,12 @@ public final class AttackSoundHandler {
             return;
         }
 
-        long gameTime = event.getEntity().level().getGameTime();
-        if (lastLocalAttackTick != Long.MIN_VALUE && gameTime - lastLocalAttackTick < OLD_PVP_HIT_DELAY_TICKS) {
+        long now = System.nanoTime();
+        if (lastLocalAttackNanos != Long.MIN_VALUE && now - lastLocalAttackNanos < OLD_PVP_HIT_DELAY_NANOS) {
             return;
         }
 
-        lastLocalAttackTick = gameTime;
-        long now = System.nanoTime();
+        lastLocalAttackNanos = now;
         LOCAL_ATTACKS.addLast(new PredictedHurtSound(target.getX(), target.getY(), target.getZ(), now));
     }
 
