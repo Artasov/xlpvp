@@ -8,6 +8,7 @@
     "PlayerAttackMixin"
   ],
   "client": [
+    "LocalPlayerSprintInvoker",
     "AnvilScreenMixin"
   ],
   "injectors": {

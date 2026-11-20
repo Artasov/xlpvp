@@ -17,12 +17,21 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
 @EventBusSubscriber(modid = Core.MODID)
 public final class FishingRodKnockbackHandler {
 
     private static final float ROD_KB = 0.408F;
     private static final double NON_LIVING_VERTICAL_DELTA = 0.1D;
+
+    @SubscribeEvent
+    public static void onStartTracking(PlayerEvent.StartTracking event) {
+        if (event.getTarget() instanceof FishingHook hook && event.getEntity() instanceof ServerPlayer viewer) {
+            HookContact contact = ((FishingHookAttachment) hook).xlpvp$getContact();
+            if (contact != null) contact.sendTo(viewer);
+        }
+    }
 
     @SubscribeEvent
     public static void onBobberImpact(ProjectileImpactEvent evt) {

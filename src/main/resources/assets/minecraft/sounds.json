@@ -1,0 +1,7 @@
+{
+  "entity.fishing_bobber.throw": {
+    "replace": true,
+    "subtitle": "subtitles.entity.fishing_bobber.throw",
+    "sounds": ["minecraft:random/bow"]
+  }
+}

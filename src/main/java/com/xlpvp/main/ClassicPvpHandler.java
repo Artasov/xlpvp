@@ -70,8 +70,8 @@ public final class ClassicPvpHandler {
 
     /* ---------- old pvp 1.7.10 с W-/S-tap ---------- */
 
-    private static final float KB_NORMAL = 0.408F;
-    private static final float KB_SPRINT = 0.816F;
+    private static final double BASE_KNOCKBACK = 0.4F;
+    private static final double EXTRA_KNOCKBACK_PER_LEVEL = 0.5;
 
 
     private static final Set<UUID> USED_SPRINT = ConcurrentHashMap.newKeySet();
@@ -83,7 +83,7 @@ public final class ClassicPvpHandler {
         final Player attacker;
         final Player target;
         final boolean strong;
-        boolean applied;
+        boolean skipNextKnockback;
 
         AttackKnockback(Player attacker, Player target) {
             this.attacker = attacker;
@@ -177,12 +177,22 @@ public final class ClassicPvpHandler {
         return attack != null && attack.attacker == attacker ? attack.strong : attacker.isSprinting();
     }
 
-    public static void onSuccessfulAttack(Player attacker, Entity target) {
+    public static void onSuccessfulAttack(Player attacker, Entity target, float weaponKnockback) {
         AttackKnockback attack = CURRENT_ATTACK.get();
         if (attack == null || attack.attacker != attacker || attack.target != target || attacker.level().isClientSide()) return;
+        // Player.attack can request a second vanilla knockback after the damage impulse.
+        attack.skipNextKnockback = true;
         if (attack.strong) {
             USED_SPRINT.add(attacker.getUUID());
         }
+        double levels = weaponKnockback + (attack.strong ? 1 : 0);
+        if (levels <= 0 || attack.target.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE) >= 1.0) return;
+
+        double yaw = Math.toRadians(attacker.getYRot());
+        double extra = levels * EXTRA_KNOCKBACK_PER_LEVEL;
+        attack.target.push(-Math.sin(yaw) * extra, 0.1, Math.cos(yaw) * extra);
+        attack.target.hurtMarked = true;
+        markClassicPvpHit(attack.target);
     }
 
     @SubscribeEvent
@@ -208,16 +218,14 @@ public final class ClassicPvpHandler {
         }
 
         e.setCanceled(true);
-        if (knockback.applied) return; // The same Player.attack can request both damage and sprint knockback.
-        knockback.applied = true;
-        float desired = knockback.strong ? KB_SPRINT : KB_NORMAL;
+        if (knockback.skipNextKnockback) return;
+        knockback.skipNextKnockback = true;
         if (victim.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE) >= 1.0D) {
             return;
         }
 
-        double yaw = Math.toRadians(knockback.attacker.getYRot());
-        double ratioX = knockback.strong ? Math.sin(yaw) : e.getOriginalRatioX();
-        double ratioZ = knockback.strong ? -Math.cos(yaw) : e.getOriginalRatioZ();
+        double ratioX = e.getOriginalRatioX();
+        double ratioZ = e.getOriginalRatioZ();
         while (ratioX * ratioX + ratioZ * ratioZ < 1.0E-5F) {
             ratioX = (Math.random() - Math.random()) * 0.01D;
             ratioZ = (Math.random() - Math.random()) * 0.01D;
@@ -225,10 +233,10 @@ public final class ClassicPvpHandler {
 
         victim.hasImpulse = true;
         Vec3 movement = victim.getDeltaMovement();
-        Vec3 knockbackVector = new Vec3(ratioX, 0.0D, ratioZ).normalize().scale(desired);
+        Vec3 knockbackVector = new Vec3(ratioX, 0.0D, ratioZ).normalize().scale(BASE_KNOCKBACK);
         victim.setDeltaMovement(
             movement.x / 2.0D - knockbackVector.x,
-            Math.min(0.4D, movement.y / 2.0D + desired),
+            Math.min(BASE_KNOCKBACK, movement.y / 2.0D + BASE_KNOCKBACK),
             movement.z / 2.0D - knockbackVector.z
         );
         victim.hurtMarked = true;

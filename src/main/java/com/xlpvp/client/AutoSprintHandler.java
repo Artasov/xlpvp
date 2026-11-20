@@ -1,15 +1,17 @@
 package com.xlpvp.client;
 
 import com.xlpvp.Core;
+import com.xlpvp.mixin.LocalPlayerSprintInvoker;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.world.effect.MobEffects;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.MovementInputUpdateEvent;
 
 @OnlyIn(Dist.CLIENT)
@@ -20,6 +22,30 @@ public final class AutoSprintHandler {
 
     private static boolean wasTryingToSprint;
     private static int retryDelayTicks;
+
+    @SubscribeEvent
+    public static void onMovementKey(InputEvent.Key event) {
+        onMovementButton(InputConstants.getKey(event.getKey(), event.getScanCode()), event.getAction());
+    }
+
+    @SubscribeEvent
+    public static void onMovementMouseButton(InputEvent.MouseButton.Post event) {
+        onMovementButton(InputConstants.Type.MOUSE.getOrCreate(event.getButton()), event.getAction());
+    }
+
+    private static void onMovementButton(InputConstants.Key key, int action) {
+        Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (mc.screen != null || player == null || !player.isSprinting() || player.isPassenger()) return;
+        if (player.isSwimming() || player.isFallFlying() || player.getAbilities().flying) return;
+        boolean releasedForward = action == InputConstants.RELEASE && mc.options.keyUp.getKey().equals(key);
+        boolean pressedBack = action == InputConstants.PRESS && mc.options.keyDown.getKey().equals(key) && mc.options.keyDown.isDown();
+        if (releasedForward || pressedBack) {
+            // A complete W/S tap between movement ticks would otherwise never reach the server.
+            player.setSprinting(false);
+            ((LocalPlayerSprintInvoker) player).xlpvp$sendSprintChange();
+        }
+    }
 
     @SubscribeEvent
     public static void onClientTickPre(ClientTickEvent.Pre evt) {
@@ -69,9 +95,7 @@ public final class AutoSprintHandler {
         player.setSprinting(true);
 
         if (sendPacketNow) {
-            player.connection.send(new ServerboundPlayerCommandPacket(
-                    player,
-                    ServerboundPlayerCommandPacket.Action.START_SPRINTING));
+            ((LocalPlayerSprintInvoker) player).xlpvp$sendSprintChange();
         }
     }
 

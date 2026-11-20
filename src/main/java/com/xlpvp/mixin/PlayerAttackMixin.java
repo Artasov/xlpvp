@@ -21,13 +21,11 @@ public abstract class PlayerAttackMixin {
 
     @ModifyExpressionValue(
         method = "attack",
-        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Entity;hurt(Lnet/minecraft/world/damagesource/DamageSource;F)Z")
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Player;getKnockback(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/damagesource/DamageSource;)F")
     )
-    private boolean xlpvp$confirmClassicHit(boolean dealtDamage, Entity target) {
-        if (dealtDamage) {
-            ClassicPvpHandler.onSuccessfulAttack((Player) (Object) this, target);
-        }
-        return dealtDamage;
+    private float xlpvp$applyClassicHit(float weaponKnockback, Entity target) {
+        ClassicPvpHandler.onSuccessfulAttack((Player) (Object) this, target, weaponKnockback);
+        return weaponKnockback;
     }
 
     @Redirect(
