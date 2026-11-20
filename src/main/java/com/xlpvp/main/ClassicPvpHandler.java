@@ -1,7 +1,9 @@
 package com.xlpvp.main;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.xlpvp.Core;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -12,9 +14,9 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -55,12 +57,7 @@ public final class ClassicPvpHandler {
     }
 
     private static void clearCombatState(UUID id) {
-        READY.remove(id);
-        PREV_SPRINT.remove(id);
-        ATTACK_KB.entrySet().removeIf(entry ->
-            entry.getKey().equals(id) || entry.getValue().attackerId().equals(id)
-        );
-        SUPPRESS_NEXT_KB.remove(id);
+        USED_SPRINT.remove(id);
         LAST_PVP_HIT.remove(id);
     }
 
@@ -77,17 +74,22 @@ public final class ClassicPvpHandler {
     private static final float KB_SPRINT = 0.816F;
 
 
-    private static final Map<UUID, Boolean> READY = new ConcurrentHashMap<>();
-
-    private static final Map<UUID, Boolean> PREV_SPRINT = new ConcurrentHashMap<>();
-
-    private static final Map<UUID, AttackKnockback> ATTACK_KB = new ConcurrentHashMap<>();
-
-    private static final Map<UUID, Long> SUPPRESS_NEXT_KB = new ConcurrentHashMap<>();
+    private static final Set<UUID> USED_SPRINT = ConcurrentHashMap.newKeySet();
+    private static final ThreadLocal<AttackKnockback> CURRENT_ATTACK = new ThreadLocal<>();
 
     private static final Map<UUID, Long> LAST_PVP_HIT = new ConcurrentHashMap<>();
 
-    private record AttackKnockback(UUID attackerId, boolean strong, double x, double z, long gameTime) {
+    private static final class AttackKnockback {
+        final Player attacker;
+        final Player target;
+        final boolean strong;
+        boolean applied;
+
+        AttackKnockback(Player attacker, Player target) {
+            this.attacker = attacker;
+            this.target = target;
+            this.strong = !attacker.level().isClientSide() && attacker.isSprinting() && !USED_SPRINT.contains(attacker.getUUID());
+        }
     }
 
     /**
@@ -99,36 +101,29 @@ public final class ClassicPvpHandler {
         return (float) (desired / (1.0 - resist));     // масштабируем вверх
     }
 
-    @SubscribeEvent
-    public static void onTickPre(PlayerTickEvent.Pre e) {
-        Player p = e.getEntity();
-        if (p.level().isClientSide()) return;
-
-        UUID id = p.getUUID();
-        boolean s = p.isSprinting();
-        boolean prev = PREV_SPRINT.getOrDefault(id, false);
-
-        if (s && !prev) READY.put(id, true);     // старт спринта
-        else if (!s) READY.put(id, false);    // спринт прерван
-
-        PREV_SPRINT.put(id, s);
+    public static void onSprintStopped(Player player) {
+        USED_SPRINT.remove(player.getUUID());
     }
 
-    public static boolean takeReady(Player p) {
-        UUID id = p.getUUID();
-        if (!p.isSprinting()) {
-            READY.put(id, false);
-            return false;
+    public static void performAttack(Player attacker, Entity target, Operation<Void> original) {
+        if (target instanceof LivingEntity livingTarget && !canReachClassicTarget(attacker, livingTarget)) {
+            return;
         }
-
-        boolean ready = READY.getOrDefault(id, false);
-        if (!ready && !PREV_SPRINT.getOrDefault(id, false)) {
-            ready = true;
-            PREV_SPRINT.put(id, true);
+        AttackKnockback previous = CURRENT_ATTACK.get();
+        if (target instanceof Player opponent && !attacker.isUsingItem()) {
+            CURRENT_ATTACK.set(new AttackKnockback(attacker, opponent));
+        } else if (previous != null) {
+            CURRENT_ATTACK.remove();
         }
-
-        READY.put(id, false);
-        return ready;
+        try {
+            original.call(target);
+        } finally {
+            if (previous == null) {
+                CURRENT_ATTACK.remove();
+            } else {
+                CURRENT_ATTACK.set(previous);
+            }
+        }
     }
 
     public static boolean canReachClassicTarget(Player player, LivingEntity target) {
@@ -172,12 +167,22 @@ public final class ClassicPvpHandler {
         return Integer.toUnsignedLong(serverLevel.getServer().getTickCount());
     }
 
-    public static boolean hasQueuedSprintKnockback(Player attacker, Player target) {
-        AttackKnockback knockback = ATTACK_KB.get(target.getUUID());
-        return knockback != null
-            && knockback.strong()
-            && knockback.attackerId().equals(attacker.getUUID())
-            && knockback.gameTime() == attacker.level().getGameTime();
+    public static boolean isClassicAttack(Player attacker) {
+        AttackKnockback attack = CURRENT_ATTACK.get();
+        return attack != null && attack.attacker == attacker;
+    }
+
+    public static boolean useSprintKnockback(Player attacker) {
+        AttackKnockback attack = CURRENT_ATTACK.get();
+        return attack != null && attack.attacker == attacker ? attack.strong : attacker.isSprinting();
+    }
+
+    public static void onSuccessfulAttack(Player attacker, Entity target) {
+        AttackKnockback attack = CURRENT_ATTACK.get();
+        if (attack == null || attack.attacker != attacker || attack.target != target || attacker.level().isClientSide()) return;
+        if (attack.strong) {
+            USED_SPRINT.add(attacker.getUUID());
+        }
     }
 
     @SubscribeEvent
@@ -191,42 +196,28 @@ public final class ClassicPvpHandler {
         if (!(e.getTarget() instanceof Player target)) return;
         if (isClassicPvpHitLocked(target)) {
             e.setCanceled(true);
-            return;
         }
-        boolean strong = attacker.isSprinting() && takeReady(attacker);
-        double yaw = Math.toRadians(attacker.getYRot());
-        ATTACK_KB.put(
-            target.getUUID(),
-            new AttackKnockback(attacker.getUUID(), strong, Math.sin(yaw), -Math.cos(yaw), attacker.level().getGameTime())
-        );
     }
 
     @SubscribeEvent
     public static void onKnockback(LivingKnockBackEvent e) {
         LivingEntity victim = e.getEntity();
-        UUID victimId = victim.getUUID();
-        long gameTime = victim.level().getGameTime();
-
-        Long suppressGameTime = SUPPRESS_NEXT_KB.remove(victimId);
-        if (suppressGameTime != null && suppressGameTime == gameTime) {
-            e.setCanceled(true);
-            return;
-        }
-
-        AttackKnockback knockback = ATTACK_KB.remove(victimId);
-        if (knockback == null || knockback.gameTime() != gameTime) {
+        AttackKnockback knockback = CURRENT_ATTACK.get();
+        if (knockback == null || knockback.target != victim || victim.level().isClientSide()) {
             return;
         }
 
         e.setCanceled(true);
-
-        float desired = knockback.strong() ? KB_SPRINT : KB_NORMAL;
+        if (knockback.applied) return; // The same Player.attack can request both damage and sprint knockback.
+        knockback.applied = true;
+        float desired = knockback.strong ? KB_SPRINT : KB_NORMAL;
         if (victim.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE) >= 1.0D) {
             return;
         }
 
-        double ratioX = knockback.strong() ? knockback.x() : e.getOriginalRatioX();
-        double ratioZ = knockback.strong() ? knockback.z() : e.getOriginalRatioZ();
+        double yaw = Math.toRadians(knockback.attacker.getYRot());
+        double ratioX = knockback.strong ? Math.sin(yaw) : e.getOriginalRatioX();
+        double ratioZ = knockback.strong ? -Math.cos(yaw) : e.getOriginalRatioZ();
         while (ratioX * ratioX + ratioZ * ratioZ < 1.0E-5F) {
             ratioX = (Math.random() - Math.random()) * 0.01D;
             ratioZ = (Math.random() - Math.random()) * 0.01D;
@@ -241,9 +232,6 @@ public final class ClassicPvpHandler {
             movement.z / 2.0D - knockbackVector.z
         );
         victim.hurtMarked = true;
-        if (victim instanceof Player target) {
-            markClassicPvpHit(target);
-        }
-        SUPPRESS_NEXT_KB.put(victimId, gameTime);
+        markClassicPvpHit(knockback.target);
     }
 }
