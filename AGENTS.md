@@ -19,7 +19,7 @@
 - `ClassicPvpHandler` ускоряет атаку, меняет knockback, sprint-hit и обработку ударов.
 - `FishingRodKnockbackHandler` возвращает PvP knockback от удочки.
 - Клиентский `AutoSprintHandler` автоматически включает sprint при движении.
-- Клиентский `AttackSoundHandler` убирает лишние ванильные attack sounds и добавляет ожидаемый hurt sound.
+- Клиентский `AttackSoundHandler` заглушает ванильные звуки `entity.player.attack.*`. Звук попадания воспроизводится при получении урона целью.
 - Добавляет enchantment `xlpvp:speed` и inject loot book в treasure chests.
 - `SpeedAnvilHandler` разрешает переносить/повышать Speed через наковальню.
 - `AnvilScreenMixin` показывает высокую стоимость ремонта/зачарования выше ванильного лимита.

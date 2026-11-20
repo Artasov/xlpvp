@@ -25,7 +25,7 @@ public final class SprintHitGameTests {
 
         checkImpulse(test, attacker, 0.4, 0.4, "Standing hit");
         attacker.setSprinting(true);
-        checkImpulse(test, attacker, 0.9, 0.5, "First sprint hit");
+        checkImpulse(test, attacker, 0.8, 0.5, "First sprint hit");
         attacker.setSprinting(true);
         checkImpulse(test, attacker, 0.4, 0.4, "Held sprint");
         attacker.setSprinting(false);
@@ -35,7 +35,7 @@ public final class SprintHitGameTests {
         immune.setPos(attacker.position().add(0, 0, 1.5));
         attacker.attack(immune);
         test.assertTrue(immune.getHealth() == immune.getMaxHealth(), "Rejected hit dealt damage");
-        checkImpulse(test, attacker, 0.9, 0.5, "Sprint restarted between ticks");
+        checkImpulse(test, attacker, 0.8, 0.5, "Sprint restarted between ticks");
 
         var sword = new ItemStack(Items.IRON_SWORD);
         sword.enchant(attacker.registryAccess().lookupOrThrow(Registries.ENCHANTMENT).getOrThrow(Enchantments.KNOCKBACK), 2);
@@ -43,7 +43,7 @@ public final class SprintHitGameTests {
         checkImpulse(test, attacker, 1.4, 0.5, "Knockback II after spending sprint");
         attacker.setSprinting(false);
         attacker.setSprinting(true);
-        checkImpulse(test, attacker, 1.9, 0.5, "First sprint hit with Knockback II");
+        checkImpulse(test, attacker, 1.8, 0.5, "First sprint hit with Knockback II");
         test.succeed();
     }
 
@@ -73,7 +73,7 @@ public final class SprintHitGameTests {
             float beforeNextHit = victim.getHealth();
             int immunity = victim.invulnerableTime;
             attacker.attack(victim);
-            var expected = new Vec3(0.5, 0.35, 0.4);
+            var expected = new Vec3(0.5, 0.35, 0.3);
             test.assertTrue(victim.getHealth() < beforeNextHit, "The next hit should deal damage after "
                 + (test.getLevel().getServer().getTickCount() - firstTick) + " ticks, immunity=" + immunity
                 + ", health=" + beforeNextHit + " -> " + victim.getHealth());

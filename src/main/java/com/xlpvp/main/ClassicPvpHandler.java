@@ -71,6 +71,7 @@ public final class ClassicPvpHandler {
     /* ---------- old pvp 1.7.10 с W-/S-tap ---------- */
 
     private static final double BASE_KNOCKBACK = 0.4F;
+    private static final double SPRINT_KNOCKBACK_BONUS = 0.4;
     private static final double EXTRA_KNOCKBACK_PER_LEVEL = 0.5;
 
 
@@ -185,11 +186,10 @@ public final class ClassicPvpHandler {
         if (attack.strong) {
             USED_SPRINT.add(attacker.getUUID());
         }
-        double levels = weaponKnockback + (attack.strong ? 1 : 0);
-        if (levels <= 0 || attack.target.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE) >= 1.0) return;
+        double extra = weaponKnockback * EXTRA_KNOCKBACK_PER_LEVEL + (attack.strong ? SPRINT_KNOCKBACK_BONUS : 0);
+        if (extra <= 0 || attack.target.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE) >= 1.0) return;
 
         double yaw = Math.toRadians(attacker.getYRot());
-        double extra = levels * EXTRA_KNOCKBACK_PER_LEVEL;
         attack.target.push(-Math.sin(yaw) * extra, 0.1, Math.cos(yaw) * extra);
         attack.target.hurtMarked = true;
         markClassicPvpHit(attack.target);
