@@ -18,6 +18,8 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import org.joml.Vector3f;
 
+import javax.annotation.Nullable;
+
 /** Relative to the target's body direction and current hitbox dimensions. */
 @EventBusSubscriber(modid = Core.MODID, bus = EventBusSubscriber.Bus.MOD)
 public record HookContact(int hookId, int targetId, Vector3f point) implements CustomPacketPayload {
@@ -46,12 +48,23 @@ public record HookContact(int hookId, int targetId, Vector3f point) implements C
     }
 
     public static HookContact capture(FishingHook hook, Entity target) {
-        AABB box = target.getBoundingBox();
         Vec3 start = hook.position();
         Vec3 end = start.add(hook.getDeltaMovement());
+        HookContact contact = traceBody(hook, target, start, end);
+        if (contact != null) return contact;
         // ProjectileUtil uses a 0.3-block margin and its EntityHitResult drops the ray intersection.
-        Vec3 hit = box.contains(start) ? start : box.clip(start, end).orElseGet(() ->
-                box.inflate(0.3F).clip(start, end).orElse(start));
+        return at(hook, target, target.getBoundingBox().inflate(0.3F).clip(start, end).orElse(start));
+    }
+
+    @Nullable
+    public static HookContact traceBody(FishingHook hook, Entity target, Vec3 start, Vec3 end) {
+        AABB box = target.getBoundingBox();
+        Vec3 hit = box.contains(start) ? start : box.clip(start, end).orElse(null);
+        return hit == null ? null : at(hook, target, hit);
+    }
+
+    private static HookContact at(FishingHook hook, Entity target, Vec3 hit) {
+        AABB box = target.getBoundingBox();
         Vec3 relative = new Vec3(Mth.clamp(hit.x, box.minX, box.maxX) - target.getX(),
                 Mth.clamp(hit.y, box.minY, box.maxY) - box.minY,
                 Mth.clamp(hit.z, box.minZ, box.maxZ) - target.getZ()).yRot(bodyYaw(target));
@@ -62,9 +75,20 @@ public record HookContact(int hookId, int targetId, Vector3f point) implements C
     }
 
     public Vec3 positionOn(Entity target) {
-        Vec3 offset = new Vec3(point).multiply(target.getBbWidth(), target.getBbHeight(), target.getBbWidth())
-                .yRot(-bodyYaw(target));
-        return offset.add(target.getX(), target.getBoundingBox().minY, target.getZ());
+        return offset(target, bodyYaw(target)).add(target.getX(), target.getBoundingBox().minY, target.getZ());
+    }
+
+    public Vec3 renderPositionOn(Entity target, float partialTick) {
+        float oldYaw = target instanceof LivingEntity living ? living.yBodyRotO : target.yRotO;
+        float yaw = target instanceof LivingEntity living ? living.yBodyRot : target.getYRot();
+        return offset(target, Mth.rotLerp(partialTick, oldYaw, yaw) * Mth.DEG_TO_RAD).add(
+                Mth.lerp(partialTick, target.xOld, target.getX()),
+                Mth.lerp(partialTick, target.yOld, target.getY()) + target.getBoundingBox().minY - target.getY(),
+                Mth.lerp(partialTick, target.zOld, target.getZ()));
+    }
+
+    private Vec3 offset(Entity target, float yaw) {
+        return new Vec3(point).multiply(target.getBbWidth(), target.getBbHeight(), target.getBbWidth()).yRot(-yaw);
     }
 
     private static float bodyYaw(Entity target) {

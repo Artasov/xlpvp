@@ -3,11 +3,13 @@
   "package": "com.xlpvp.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "ClassicFishingCastMixin",
     "FishingHookMixin",
     "LivingEntitySprintMixin",
     "PlayerAttackMixin"
   ],
   "client": [
+    "FishingHookRendererMixin",
     "LocalPlayerSprintInvoker",
     "AnvilScreenMixin"
   ],
