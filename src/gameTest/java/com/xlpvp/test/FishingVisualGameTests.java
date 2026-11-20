@@ -50,6 +50,8 @@ public final class FishingVisualGameTests {
                 boolean metadata = metadataFirst || tick >= 2;
                 if (!metadataFirst && tick == 2) visual.syncedTarget(hook, target.getId(), target);
                 visual.tick(hook, metadataFirst && tick < 2 ? null : torso, metadata ? target.getId() : -1);
+                test.assertTrue(visual.isAttachedTo(target) == (tick >= 1),
+                        "Render contact must begin when the displayed flight reaches the target");
                 Vec3 from = tick == 0 ? start : tick == 1 ? firstEnd : leg;
                 Vec3 to = tick == 0 ? firstEnd : leg;
                 for (float frame : new float[]{0, 0.5F, 1}) {
@@ -91,12 +93,15 @@ public final class FishingVisualGameTests {
             Vec3 end = visual.position(1);
             lastFrame = end == null ? hook.position() : end;
             if (tick == 1 || !serverMiss && tick == 19) {
+                test.assertTrue(visual.isAttachedTo(target) && !visual.isAttachedTo(hook.getOwner()),
+                        "Only the struck entity should see the attached bobber hidden in first person");
                 test.assertTrue(lastFrame.distanceTo(target.position().add(localOffset)) < 1.0e-5,
                         "Bobber left the original low contact on the moving target");
                 test.assertTrue(visual.position(0.5F).distanceTo(target.getPosition(0.5F).add(localOffset)) < 1.0e-5,
                         "Bobber drifted off the rendered target between ticks");
             }
             if (tick == (serverMiss ? 6 : 13)) {
+                test.assertTrue(!visual.isAttachedTo(target), "A released bobber must be visible again");
                 test.assertTrue(end == null, "Unconfirmed contact is still holding the bobber");
                 if (serverMiss) break;
             }

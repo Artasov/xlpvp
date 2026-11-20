@@ -123,6 +123,10 @@ public final class FishingHookVisual {
         return true;
     }
 
+    public boolean isAttachedTo(Entity target) {
+        return current != null && current.target == target;
+    }
+
     @Nullable
     public Vec3 position(float partialTick) {
         if (previous == null || current == null) return null;

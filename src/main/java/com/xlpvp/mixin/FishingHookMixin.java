@@ -48,6 +48,11 @@ public abstract class FishingHookMixin implements FishingHookAttachment {
         return xlpvp$visual == null ? null : xlpvp$visual.position(partialTick);
     }
 
+    @Override
+    public boolean xlpvp$isVisuallyAttachedTo(Entity target) {
+        return xlpvp$visual == null ? hookedIn == target : xlpvp$visual.isAttachedTo(target);
+    }
+
     @Unique
     private FishingHookVisual xlpvp$visual() {
         if (xlpvp$visual == null) xlpvp$visual = new FishingHookVisual();
