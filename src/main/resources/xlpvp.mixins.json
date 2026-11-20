@@ -6,7 +6,8 @@
     "ClassicFishingCastMixin",
     "FishingHookMixin",
     "LivingEntitySprintMixin",
-    "PlayerAttackMixin"
+    "PlayerAttackMixin",
+    "PlayerFireContactMixin"
   ],
   "client": [
     "FishingHookRendererMixin",
