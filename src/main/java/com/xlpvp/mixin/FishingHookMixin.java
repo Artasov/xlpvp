@@ -4,8 +4,10 @@ import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.xlpvp.main.FishingHookAttachment;
 import com.xlpvp.main.FishingHookVisual;
 import com.xlpvp.main.HookContact;
+import com.xlpvp.trace.DuelTrace;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.FishingHook;
 import net.minecraft.world.phys.EntityHitResult;
@@ -71,6 +73,13 @@ public abstract class FishingHookMixin implements FishingHookAttachment {
     @Inject(method = "checkCollision", at = @At("HEAD"))
     private void xlpvp$observeAirTick(CallbackInfo ci) {
         xlpvp$checkedFlight = true;
+        FishingHook hook = (FishingHook) (Object) this;
+        if (hook.getOwner() instanceof ServerPlayer owner && DuelTrace.active(owner)) {
+            Vec3 motion = hook.getDeltaMovement();
+            DuelTrace.event(owner, null, "rod_flight", "hook", hook.getId(), "ageTicks", hook.tickCount,
+                    "x", hook.getX(), "y", hook.getY(), "z", hook.getZ(),
+                    "vx", motion.x, "vy", motion.y, "vz", motion.z);
+        }
     }
 
     @Inject(method = "onHitEntity", at = @At("RETURN"))

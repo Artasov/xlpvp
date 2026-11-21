@@ -1,6 +1,7 @@
 package com.xlpvp.main;
 
 import com.xlpvp.Core;
+import com.xlpvp.trace.DuelTrace;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -17,6 +18,8 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
+import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
 @EventBusSubscriber(modid = Core.MODID)
@@ -24,6 +27,25 @@ public final class FishingRodKnockbackHandler {
 
     private static final float ROD_KB = 0.408F;
     private static final double NON_LIVING_VERTICAL_DELTA = 0.1D;
+
+    @SubscribeEvent
+    public static void traceCast(EntityJoinLevelEvent event) {
+        if (event.getEntity() instanceof FishingHook hook && hook.getOwner() instanceof ServerPlayer owner
+                && DuelTrace.active(owner)) {
+            Vec3 motion = hook.getDeltaMovement();
+            DuelTrace.event(owner, null, "rod_spawn", "hook", hook.getId(),
+                    "x", hook.getX(), "y", hook.getY(), "z", hook.getZ(),
+                    "vx", motion.x, "vy", motion.y, "vz", motion.z);
+        }
+    }
+
+    @SubscribeEvent
+    public static void traceRemoval(EntityLeaveLevelEvent event) {
+        if (event.getEntity() instanceof FishingHook hook && hook.getOwner() instanceof ServerPlayer owner
+                && DuelTrace.active(owner)) {
+            DuelTrace.event(owner, null, "rod_removed", "hook", hook.getId(), "ageTicks", hook.tickCount);
+        }
+    }
 
     @SubscribeEvent
     public static void onStartTracking(PlayerEvent.StartTracking event) {
@@ -39,13 +61,27 @@ public final class FishingRodKnockbackHandler {
         if (!(proj instanceof FishingHook hook)) return;
 
         HitResult hit = evt.getRayTraceResult();
-        if (!(hit instanceof EntityHitResult eh)) return;
+        if (!(hit instanceof EntityHitResult eh)) {
+            if (hit.getType() == HitResult.Type.BLOCK && hook.getOwner() instanceof ServerPlayer owner && DuelTrace.active(owner)) {
+                Vec3 location = hit.getLocation();
+                DuelTrace.event(owner, null, "rod_block_impact", "hook", hook.getId(),
+                        "x", location.x, "y", location.y, "z", location.z);
+            }
+            return;
+        }
 
         Entity target = eh.getEntity();
         Player owner = hook.getOwner() instanceof Player p ? p : null;
         if (owner == null || !target.isAttackable()) return;
         if (owner.level().isClientSide()) return;
+        boolean traced = DuelTrace.pair(owner, target);
+        if (traced) {
+            Vec3 location = hit.getLocation();
+            DuelTrace.event(owner, target, "rod_entity_impact", "hook", hook.getId(), "ageTicks", hook.tickCount,
+                    "x", location.x, "y", location.y, "z", location.z, "targetGrounded", target.onGround());
+        }
         if (target instanceof Player targetPlayer && ClassicPvpHandler.isClassicPvpHitLocked(targetPlayer)) {
+            ClassicPvpHandler.traceHitLock(owner, targetPlayer, "rod_rejected");
             return;
         }
 
@@ -71,7 +107,13 @@ public final class FishingRodKnockbackHandler {
                     target.getDeltaMovement().add(-xRatio * ROD_KB, NON_LIVING_VERTICAL_DELTA, -zRatio * ROD_KB));
             target.hurtMarked = true;
         }
+        Vec3 sentMotion = target.getDeltaMovement();
         sendMotionNow(target, oldMovement);
+        if (traced) {
+            DuelTrace.event(owner, target, "rod_motion_sent", "hook", hook.getId(),
+                    "vx", sentMotion.x, "vy", sentMotion.y, "vz", sentMotion.z,
+                    "oldVx", oldMovement.x, "oldVy", oldMovement.y, "oldVz", oldMovement.z);
+        }
         if (target instanceof Player targetPlayer) {
             ClassicPvpHandler.markClassicPvpHit(targetPlayer);
         }

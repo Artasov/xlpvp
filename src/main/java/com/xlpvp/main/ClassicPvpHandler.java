@@ -2,6 +2,7 @@ package com.xlpvp.main;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.xlpvp.Core;
+import com.xlpvp.trace.DuelTrace;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -103,11 +104,24 @@ public final class ClassicPvpHandler {
     }
 
     public static void onSprintStopped(Player player) {
-        USED_SPRINT.remove(player.getUUID());
+        boolean wasUsed = USED_SPRINT.remove(player.getUUID());
+        if (wasUsed && !player.level().isClientSide() && DuelTrace.active(player)) {
+            DuelTrace.event(player, null, "sprint_knockback_rearmed");
+        }
     }
 
     public static void performAttack(Player attacker, Entity target, Operation<Void> original) {
+        boolean traced = !attacker.level().isClientSide() && DuelTrace.pair(attacker, target);
+        if (traced) {
+            DuelTrace.event(attacker, target, "melee_attempt",
+                    "distanceToBox", Math.sqrt(target.getBoundingBox().distanceToSqr(attacker.getEyePosition())),
+                    "reach", attacker.entityInteractionRange() + OLD_PVP_REACH_EXTRA,
+                    "sprinting", attacker.isSprinting(), "sprintUsed", USED_SPRINT.contains(attacker.getUUID()),
+                    "usingItem", attacker.isUsingItem(), "weapon", attacker.getMainHandItem().getItem().toString(),
+                    "attackStrength", attacker.getAttackStrengthScale(0.5F), "targetInvulnerableTicks", target.invulnerableTime);
+        }
         if (target instanceof LivingEntity livingTarget && !canReachClassicTarget(attacker, livingTarget)) {
+            if (traced) DuelTrace.event(attacker, target, "melee_rejected", "reason", "reach");
             return;
         }
         AttackKnockback previous = CURRENT_ATTACK.get();
@@ -118,6 +132,7 @@ public final class ClassicPvpHandler {
         }
         try {
             original.call(target);
+            if (traced) DuelTrace.event(attacker, target, "melee_end");
         } finally {
             if (previous == null) {
                 CURRENT_ATTACK.remove();
@@ -151,6 +166,14 @@ public final class ClassicPvpHandler {
 
         LAST_PVP_HIT.remove(targetId, lastHitTick);
         return false;
+    }
+
+    static void traceHitLock(Player attacker, Player target, String event) {
+        if (DuelTrace.pair(attacker, target)) {
+            Long last = LAST_PVP_HIT.get(target.getUUID());
+            DuelTrace.event(attacker, target, event, "reason", "hit_lock", "lastHitTick", last,
+                    "lockTicks", OLD_PVP_HIT_LOCK_TICKS);
+        }
     }
 
     public static void markClassicPvpHit(Player target) {
@@ -187,11 +210,18 @@ public final class ClassicPvpHandler {
             USED_SPRINT.add(attacker.getUUID());
         }
         double extra = weaponKnockback * EXTRA_KNOCKBACK_PER_LEVEL + (attack.strong ? SPRINT_KNOCKBACK_BONUS : 0);
+        if (DuelTrace.pair(attacker, target)) {
+            DuelTrace.event(attacker, target, "melee_accepted", "sprintBonus", attack.strong,
+                    "weaponKnockback", weaponKnockback, "extraStrengthRequested", extra);
+        }
         if (extra <= 0 || attack.target.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE) >= 1.0) return;
 
         double yaw = Math.toRadians(attacker.getYRot());
         attack.target.push(-Math.sin(yaw) * extra, 0.1, Math.cos(yaw) * extra);
         attack.target.hurtMarked = true;
+        if (DuelTrace.pair(attacker, target)) {
+            traceVelocity(attacker, target, "melee_sprint_or_weapon_impulse", target.getDeltaMovement());
+        }
         markClassicPvpHit(attack.target);
     }
 
@@ -200,11 +230,15 @@ public final class ClassicPvpHandler {
         Player attacker = e.getEntity();
         if (attacker.level().isClientSide) return;
         if (attacker.isUsingItem()) {
+            if (DuelTrace.pair(attacker, e.getTarget())) {
+                DuelTrace.event(attacker, e.getTarget(), "melee_rejected", "reason", "using_item");
+            }
             e.setCanceled(true);
             return;
         }
         if (!(e.getTarget() instanceof Player target)) return;
         if (isClassicPvpHitLocked(target)) {
+            traceHitLock(attacker, target, "melee_rejected");
             e.setCanceled(true);
         }
     }
@@ -218,9 +252,17 @@ public final class ClassicPvpHandler {
         }
 
         e.setCanceled(true);
-        if (knockback.skipNextKnockback) return;
+        if (knockback.skipNextKnockback) {
+            if (DuelTrace.pair(knockback.attacker, victim)) {
+                DuelTrace.event(knockback.attacker, victim, "melee_extra_vanilla_impulse_skipped");
+            }
+            return;
+        }
         knockback.skipNextKnockback = true;
         if (victim.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE) >= 1.0D) {
+            if (DuelTrace.pair(knockback.attacker, victim)) {
+                DuelTrace.event(knockback.attacker, victim, "melee_impulse_resisted");
+            }
             return;
         }
 
@@ -240,6 +282,13 @@ public final class ClassicPvpHandler {
             movement.z / 2.0D - knockbackVector.z
         );
         victim.hurtMarked = true;
+        if (DuelTrace.pair(knockback.attacker, victim)) {
+            traceVelocity(knockback.attacker, victim, "melee_base_impulse", victim.getDeltaMovement());
+        }
         markClassicPvpHit(knockback.target);
+    }
+
+    private static void traceVelocity(Player attacker, Entity target, String kind, Vec3 motion) {
+        DuelTrace.event(attacker, target, kind, "vx", motion.x, "vy", motion.y, "vz", motion.z);
     }
 }
