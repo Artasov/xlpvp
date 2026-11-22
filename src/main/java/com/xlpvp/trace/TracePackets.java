@@ -95,6 +95,15 @@ public final class TracePackets {
                 DuelTrace.event(recipient, entity, "out_track_position", "x", teleport.getX(), "y", teleport.getY(),
                         "z", teleport.getZ(), "onGround", teleport.isOnGround());
             }
+        } else if (packet instanceof ClientboundAnimatePacket animation
+                && (animation.getAction() == ClientboundAnimatePacket.SWING_MAIN_HAND
+                || animation.getAction() == ClientboundAnimatePacket.SWING_OFF_HAND)) {
+            Entity entity = recipient.serverLevel().getEntity(animation.getId());
+            if (DuelTrace.pair(recipient, entity)) {
+                InteractionHand hand = animation.getAction() == ClientboundAnimatePacket.SWING_MAIN_HAND
+                        ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND;
+                DuelTrace.event(recipient, entity, "out_track_swing", "hand", hand);
+            }
         } else if (packet instanceof ClientboundPlayerPositionPacket correction) {
             DuelTrace.event(recipient, null, "out_self_position", "teleportId", correction.getId(),
                     "x", correction.getX(), "y", correction.getY(), "z", correction.getZ(), "yaw", correction.getYRot(),

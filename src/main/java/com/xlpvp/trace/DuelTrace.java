@@ -56,6 +56,13 @@ public final class DuelTrace {
         if (server == null || !server.isSameThread()) throw new IllegalStateException("Сервер ещё не готов.");
         ServerPlayer a = server.getPlayerList().getPlayer(first);
         ServerPlayer b = server.getPlayerList().getPlayer(second);
+        ServerPlayer levelActor = null;
+        // Practice bots are registered in the duel level and have no PlayerList entry.
+        if (a == null && b != null && b.serverLevel().getEntity(first) instanceof ServerPlayer participant) {
+            a = levelActor = participant;
+        } else if (b == null && a != null && a.serverLevel().getEntity(second) instanceof ServerPlayer participant) {
+            b = levelActor = participant;
+        }
         if (a == null || b == null || first.equals(second)) throw new IllegalStateException("Оба участника должны быть в игре.");
         try {
             Path dir = Files.createDirectories(FMLPaths.GAMEDIR.get().resolve("logs/duel-traces"));
@@ -75,10 +82,11 @@ public final class DuelTrace {
                 entry.addProperty("uuid", player.getUUID().toString());
                 entry.addProperty("name", player.getGameProfile().getName());
                 entry.addProperty("ip", player.getIpAddress());
+                if (player == levelActor) entry.addProperty("level_actor", true);
                 players.add(entry);
             }
             header.add("players", players);
-            Recording r = new Recording(server, duel, first, second, file);
+            Recording r = new Recording(server, duel, first, second, levelActor, file);
             r.append("start", header);
             r.worker.start();
             current = r;
@@ -155,12 +163,16 @@ public final class DuelTrace {
         r.append("tick", tick);
         for (UUID id : r.players) {
             ServerPlayer p = e.getServer().getPlayerList().getPlayer(id);
+            if (p == null && r.levelActor != null && r.levelActor.getUUID().equals(id) && !r.levelActor.isRemoved()) {
+                p = r.levelActor;
+            }
             if (p == null) continue;
             var v = p.getDeltaMovement();
             event(p, null, "state", "dimension", p.level().dimension().location(), "x", p.getX(), "y", p.getY(), "z", p.getZ(),
                     "vx", v.x, "vy", v.y, "vz", v.z, "yaw", p.getYRot(), "pitch", p.getXRot(), "ground", p.onGround(),
                     "sprint", p.isSprinting(), "hp", p.getHealth(), "hurtTicks", p.hurtTime, "invulnerableTicks", p.invulnerableTime,
-                    "mainHand", BuiltInRegistries.ITEM.getKey(p.getMainHandItem().getItem()), "ping_ms", p.connection.latency());
+                    "mainHand", BuiltInRegistries.ITEM.getKey(p.getMainHandItem().getItem()), "ping_ms", p.connection.latency(),
+                    "local_forward", p == r.levelActor ? p.zza : null, "local_strafe", p == r.levelActor ? p.xxa : null);
         }
     }
 
@@ -174,6 +186,7 @@ public final class DuelTrace {
         final MinecraftServer server;
         final UUID duel;
         final UUID[] players;
+        final ServerPlayer levelActor;
         final Path path;
         final long start = System.nanoTime();
         final BufferedWriter out;
@@ -184,10 +197,11 @@ public final class DuelTrace {
         long dropped;
         volatile String endReason;
 
-        Recording(MinecraftServer server, UUID duel, UUID a, UUID b, Path file) throws IOException {
+        Recording(MinecraftServer server, UUID duel, UUID a, UUID b, ServerPlayer levelActor, Path file) throws IOException {
             this.server = server;
             this.duel = duel;
             players = new UUID[]{a, b};
+            this.levelActor = levelActor;
             path = file;
             out = Files.newBufferedWriter(file);
             worker = new Thread(this::write, "xlpvp-duel-trace");
