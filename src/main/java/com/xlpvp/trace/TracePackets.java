@@ -48,6 +48,9 @@ public final class TracePackets {
                     Entity target = interact.getTarget(actor.serverLevel());
                     if (target != null && !DuelTrace.pair(actor, target)) return;
                     DuelTrace.event(actor, target, "in_attack", "netToMainUs", queueUs, "targetResolved", target != null,
+                            "targetEntityId", target == null ? null : target.getId(),
+                            "distanceToBox", target == null ? null : Math.sqrt(target.getBoundingBox().distanceToSqr(actor.getEyePosition())),
+                            "reach", actor.entityInteractionRange(),
                             "sneaking", interact.isUsingSecondaryAction(), "usingItem", actor.isUsingItem());
                 }
             });

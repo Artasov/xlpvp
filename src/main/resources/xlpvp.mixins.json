@@ -12,6 +12,11 @@
     "PlayerFireContactMixin"
   ],
   "client": [
+    "ClientDuelTraceConnectionMixin",
+    "ClientDuelTraceInputMixin",
+    "ClientDuelTraceInteractAccessor",
+    "ClientDuelTraceMouseMixin",
+    "ClientDuelTraceRenderMixin",
     "FishingHookRendererMixin",
     "LocalPlayerSprintInvoker",
     "AnvilScreenMixin"

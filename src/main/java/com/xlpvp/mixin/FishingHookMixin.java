@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.xlpvp.main.FishingHookAttachment;
 import com.xlpvp.main.FishingHookVisual;
 import com.xlpvp.main.HookContact;
+import com.xlpvp.trace.ClientDuelTrace;
 import com.xlpvp.trace.DuelTrace;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.server.level.ServerLevel;
@@ -42,6 +43,7 @@ public abstract class FishingHookMixin implements FishingHookAttachment {
         // Network handlers can run between two renders of the same tick.
         // Consume the contact in tick(), keeping the displayed segment intact.
         FishingHook hook = (FishingHook) (Object) this;
+        if (hook.level().isClientSide()) ClientDuelTrace.rod("rod_server_contact", hook, contact.targetId());
         xlpvp$sampleIncomingTarget(hook, hook.level().getEntity(contact.targetId()));
     }
 
@@ -102,6 +104,7 @@ public abstract class FishingHookMixin implements FishingHookAttachment {
             xlpvp$contact = null;
         }
         if (hook.level().isClientSide() && (syncedId >= 0 || xlpvp$visual != null)) {
+            ClientDuelTrace.rod("rod_server_target", hook, syncedId);
             xlpvp$sampleIncomingTarget(hook, hookedIn);
             xlpvp$visual().syncedTarget(hook, syncedId, hookedIn);
         }

@@ -22,6 +22,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -87,9 +89,11 @@ public final class DuelTrace {
             }
             header.add("players", players);
             Recording r = new Recording(server, duel, first, second, levelActor, file);
+            header.addProperty("trace", r.trace.toString());
             r.append("start", header);
             r.worker.start();
             current = r;
+            r.signalClients(true);
             return "Запись начата: logs/duel-traces/" + file.getFileName();
         } catch (IOException ex) {
             LogUtils.getLogger().error("Could not open duel trace", ex);
@@ -127,6 +131,14 @@ public final class DuelTrace {
             r.finish(reason);
             last = new LastFile(duel, r.path, reason);
             current = null;
+            r.server.executeIfPossible(() -> r.signalClients(false));
+        }
+    }
+
+    static void clientReady(ServerPlayer player, UUID trace) {
+        Recording r = current;
+        if (r != null && r.trace.equals(trace) && r.contains(player.getUUID()) && r.ready.add(player.getUUID())) {
+            event(player, null, "client_trace_ready", "trace", trace);
         }
     }
 
@@ -185,7 +197,9 @@ public final class DuelTrace {
     private static final class Recording {
         final MinecraftServer server;
         final UUID duel;
+        final UUID trace = UUID.randomUUID();
         final UUID[] players;
+        final Set<UUID> ready = new HashSet<>();
         final ServerPlayer levelActor;
         final Path path;
         final long start = System.nanoTime();
@@ -208,6 +222,15 @@ public final class DuelTrace {
         }
 
         boolean contains(UUID id) { return players[0].equals(id) || players[1].equals(id); }
+
+        void signalClients(boolean start) {
+            for (int i = 0; i < players.length; i++) {
+                ServerPlayer player = server.getPlayerList().getPlayer(players[i]);
+                if (player == null) continue;
+                boolean sent = new DuelTracePackets.Control(trace, duel, players[1 - i], start).sendTo(player);
+                if (start) event(player, null, "client_trace_requested", "supported", sent);
+            }
+        }
 
         synchronized void append(String kind, JsonObject fields) {
             if (endReason != null) return;

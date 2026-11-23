@@ -1,5 +1,6 @@
 package com.xlpvp.main;
 
+import com.xlpvp.trace.ClientDuelTrace;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.FishingHook;
 import net.minecraft.core.BlockPos;
@@ -43,6 +44,7 @@ public final class FishingHookVisual {
             Vec3 farCorner = new Vec3(castDirection.x >= 0 ? box.maxX : box.minX,
                     castDirection.y >= 0 ? box.maxY : box.minY, castDirection.z >= 0 ? box.maxZ : box.minZ);
             farEdge = farCorner.dot(castDirection);
+            ClientDuelTrace.rod("rod_predicted_contact", hook, target.getId());
         }
     }
 
@@ -90,7 +92,10 @@ public final class FishingHookVisual {
             // ClientPacketListener only advances this base for an actual server position update.
             Vec3 serverPosition = hook.getPositionCodec().getBase();
             if (serverPosition.dot(castDirection) > farEdge + 1.0 / 4096
-                    || hook.tickCount - predictionTick >= PREDICTION_TICKS) prediction = null;
+                    || hook.tickCount - predictionTick >= PREDICTION_TICKS) {
+                ClientDuelTrace.rod("rod_prediction_expired", hook, prediction.targetId());
+                prediction = null;
+            }
         }
         if (metadataContact == null && syncedId >= 0 && prediction == null && serverContact == null) {
             Entity tracked = hook.level().getEntity(syncedId);
