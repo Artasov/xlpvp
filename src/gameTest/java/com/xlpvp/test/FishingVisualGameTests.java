@@ -16,13 +16,75 @@ import org.joml.Vector3f;
 @PrefixGameTestTemplate(false)
 public final class FishingVisualGameTests {
     @GameTest(template = "empty")
-    public static void confirmedFlyPastReleasesPredictedContact(GameTestHelper test) {
-        replayDelayedContact(test, true);
+    public static void localContactDoesNotAttachWhenServerMisses(GameTestHelper test) {
+        var target = test.spawn(EntityType.ZOMBIE, new BlockPos(1, 1, 1));
+        var hook = new FishingHook(test.makeMockServerPlayerInLevel(), test.getLevel(), 0, 0);
+        hook.setPos(target.position().add(0.08, 0.30, -1.0));
+        hook.setDeltaMovement(0, 0, 1.3);
+        hook.getPositionCodec().setBase(hook.position());
+
+        var visual = new FishingHookVisual();
+        visual.predict(hook, target);
+        test.assertTrue(visual.tick(hook, null, -1), "Keep a fresh candidate for a possible confirmation");
+        test.assertTrue(visual.position(1) == null && !visual.isAttachedTo(target),
+                "A local hit alone must leave the bobber in flight");
+
+        hook.tickCount++;
+        hook.setPos(hook.position().add(0, 0, 2));
+        hook.getPositionCodec().setBase(hook.position());
+        test.assertTrue(!visual.tick(hook, null, -1), "Discard prediction once the server's hook has passed");
+        test.assertTrue(visual.position(1) == null && !visual.isAttachedTo(target),
+                "A rejected candidate must not alter the visible flight");
+
+        // This target can still be hit later. The earlier candidate must not override the new contact point.
+        var laterContact = new HookContact(hook.getId(), target.getId(), new Vector3f(0, 0.8F, 0));
+        for (int i = 0; i < 3; i++) visual.tick(hook, laterContact, target.getId());
+        test.assertTrue(visual.position(1).distanceTo(laterContact.positionOn(target)) < 1.0e-5,
+                "An expired candidate replaced a subsequent server contact");
+        test.succeed();
     }
 
     @GameTest(template = "empty")
     public static void lateConfirmationReturnsToOriginalContactOnMovingTarget(GameTestHelper test) {
-        replayDelayedContact(test, false);
+        var target = test.spawn(EntityType.ZOMBIE, new BlockPos(1, 1, 1));
+        target.yBodyRot = target.yBodyRotO = 0;
+        var hook = new FishingHook(test.makeMockServerPlayerInLevel(), test.getLevel(), 0, 0);
+        hook.setPos(target.position().add(0.08, 0.30, -1.0));
+        hook.setDeltaMovement(0, 0, 1.3);
+        hook.getPositionCodec().setBase(hook.position());
+        var visual = new FishingHookVisual();
+        visual.predict(hook, target);
+        var localOffset = new Vec3(0.08, 0.30, -target.getBbWidth() / 2);
+        var packet = new HookContact(hook.getId(), target.getId(), new Vector3f(0, 0.8F, 0));
+        Vec3 lastFrame = hook.position();
+        for (int tick = 0; tick <= 8; tick++) {
+            target.setOldPosAndRot();
+            if (tick > 0) target.setPos(target.position().add(0.12, 0, 0));
+            hook.setOldPosAndRot();
+            hook.setPos(tick >= 4 ? packet.positionOn(target) : hook.position().add(0, 0, 0.2));
+            int syncedId = tick >= 4 ? target.getId() : -1;
+            if (tick == 4) visual.syncedTarget(hook, syncedId, target);
+            test.assertTrue(visual.tick(hook, tick >= 6 ? packet : null, syncedId),
+                    "Lost the fresh contact candidate while waiting for server");
+            Vec3 start = visual.position(0);
+            test.assertTrue((start == null ? hook.getPosition(0) : start).distanceTo(lastFrame) < 1.0e-5,
+                    "Visual position jumped between ticks at " + tick);
+            Vec3 end = visual.position(1);
+            lastFrame = end == null ? hook.position() : end;
+            if (tick < 4) {
+                test.assertTrue(end == null && !visual.isAttachedTo(target), "Client attached before confirmation");
+            }
+            if (tick == 8) {
+                test.assertTrue(visual.isAttachedTo(target) && !visual.isAttachedTo(hook.getOwner()),
+                        "Only the confirmed target should see the attached bobber hidden in first person");
+                test.assertTrue(lastFrame.distanceTo(target.position().add(localOffset)) < 1.0e-5,
+                        "Bobber left the original low contact on the moving target");
+                test.assertTrue(visual.position(0.5F).distanceTo(target.getPosition(0.5F).add(localOffset)) < 1.0e-5,
+                        "Bobber drifted off the rendered target between ticks");
+            }
+            hook.tickCount++;
+        }
+        test.succeed();
     }
 
     @GameTest(template = "empty")
@@ -64,49 +126,4 @@ public final class FishingVisualGameTests {
         test.succeed();
     }
 
-    private static void replayDelayedContact(GameTestHelper test, boolean serverMiss) {
-        var target = test.spawn(EntityType.ZOMBIE, new BlockPos(1, 1, 1));
-        target.yBodyRot = target.yBodyRotO = 0;
-        var hook = new FishingHook(test.makeMockServerPlayerInLevel(), test.getLevel(), 0, 0);
-        hook.setPos(target.position().add(0.08, 0.30, -1.0));
-        hook.setDeltaMovement(0, 0, 1.3);
-        hook.getPositionCodec().setBase(hook.position());
-        var visual = new FishingHookVisual();
-        visual.predict(hook, target);
-        var localOffset = new Vec3(0.08, 0.30, -target.getBbWidth() / 2);
-        // The server sampled the target at a different height. Its payload arrives several ticks after the ID.
-        var packet = new HookContact(hook.getId(), target.getId(), new Vector3f(0, 0.8F, 0));
-        Vec3 lastFrame = hook.position();
-        for (int tick = 0; tick <= 19; tick++) {
-            target.setOldPosAndRot();
-            if (tick > 0) target.setPos(target.position().add(0.12, 0, 0));
-            hook.setOldPosAndRot();
-            hook.setPos(hook.position().add(0, 0, 1));
-            if (serverMiss && tick == 2) hook.getPositionCodec().setBase(hook.position());
-            int syncedId = !serverMiss && tick >= 14 ? target.getId() : -1;
-            if (!serverMiss && tick == 14) visual.syncedTarget(hook, syncedId, target);
-            boolean keepState = visual.tick(hook, !serverMiss && tick >= 16 ? packet : null, syncedId);
-            test.assertTrue(keepState || serverMiss, "Lost the local contact before delayed confirmation");
-            Vec3 start = visual.position(0);
-            test.assertTrue((start == null ? hook.getPosition(0) : start).distanceTo(lastFrame) < 1.0e-5,
-                    "Visual position jumped between ticks at " + tick);
-            Vec3 end = visual.position(1);
-            lastFrame = end == null ? hook.position() : end;
-            if (tick == 1 || !serverMiss && tick == 19) {
-                test.assertTrue(visual.isAttachedTo(target) && !visual.isAttachedTo(hook.getOwner()),
-                        "Only the struck entity should see the attached bobber hidden in first person");
-                test.assertTrue(lastFrame.distanceTo(target.position().add(localOffset)) < 1.0e-5,
-                        "Bobber left the original low contact on the moving target");
-                test.assertTrue(visual.position(0.5F).distanceTo(target.getPosition(0.5F).add(localOffset)) < 1.0e-5,
-                        "Bobber drifted off the rendered target between ticks");
-            }
-            if (tick == (serverMiss ? 6 : 13)) {
-                test.assertTrue(!visual.isAttachedTo(target), "A released bobber must be visible again");
-                test.assertTrue(end == null, "Unconfirmed contact is still holding the bobber");
-                if (serverMiss) break;
-            }
-            hook.tickCount++;
-        }
-        test.succeed();
-    }
 }

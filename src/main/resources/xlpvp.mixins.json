@@ -9,9 +9,12 @@
     "FishingHookMixin",
     "LivingEntitySprintMixin",
     "PlayerAttackMixin",
-    "PlayerFireContactMixin"
+    "PlayerFireContactMixin",
+    "ServerArenaTrackingMixin"
   ],
   "client": [
+    "ClassicPvpKeyMappingMixin",
+    "ClientArenaTrackingMixin",
     "ClientDuelTraceConnectionMixin",
     "ClientDuelTraceInputMixin",
     "ClientDuelTraceInteractAccessor",

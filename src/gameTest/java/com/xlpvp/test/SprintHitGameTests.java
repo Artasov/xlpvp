@@ -1,15 +1,19 @@
 package com.xlpvp.test;
 
+import com.xlpvp.main.FishingRodKnockbackHandler;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.FishingHook;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.EntityHitResult;
+import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
@@ -81,6 +85,57 @@ public final class SprintHitGameTests {
                 "Side hit should keep half the motion, push away from attacker and add sprint along yaw: " + victim.getDeltaMovement());
             test.succeed();
         });
+    }
+
+    @GameTest(template = "empty")
+    public static void rodDoesNotBlockSwordDamageOrStackSameTickImpulse(GameTestHelper test) {
+        var attacker = test.makeMockServerPlayerInLevel();
+        attacker.setGameMode(GameType.SURVIVAL);
+        attacker.setPos(test.absoluteVec(new Vec3(1.5, 1, 1.5)));
+        attacker.setYRot(0);
+        attacker.setSprinting(true);
+        attacker.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_SWORD));
+        var sameTick = test.makeMockPlayer(GameType.SURVIVAL);
+        sameTick.setPos(attacker.position().add(0, 0, 1.5));
+        sameTick.setOnGround(true);
+        var hook = new FishingHook(attacker, test.getLevel(), 0, 0);
+        rodImpact(hook, sameTick);
+        var firstImpulse = sameTick.getDeltaMovement();
+        test.assertTrue(firstImpulse.z > 0.4, "Rod should apply its impulse");
+        attacker.attack(sameTick);
+        test.assertTrue(sameTick.getHealth() < sameTick.getMaxHealth(), "Sword damage was blocked after a rod hit");
+        test.assertTrue(sameTick.getDeltaMovement().equals(firstImpulse), "A second same-tick impulse was applied");
+        float health = sameTick.getHealth();
+        attacker.attack(sameTick);
+        test.assertTrue(sameTick.getHealth() == health, "Sword immunity was lost");
+
+        var nextTick = test.makeMockPlayer(GameType.SURVIVAL);
+        nextTick.setPos(attacker.position().add(0, 0, 1.5));
+        nextTick.setOnGround(true);
+        rodImpact(hook, nextTick);
+        test.runAfterDelay(1, () -> {
+            nextTick.setDeltaMovement(Vec3.ZERO);
+            rodImpact(hook, nextTick);
+            test.assertTrue(nextTick.getDeltaMovement().equals(Vec3.ZERO), "Rod-to-rod cooldown was lost");
+            attacker.attack(nextTick);
+            test.assertTrue(nextTick.getHealth() < nextTick.getMaxHealth(), "Sword could not follow a rod on the next tick");
+            var swordImpulse = nextTick.getDeltaMovement();
+            test.assertTrue(swordImpulse.z >= 0.4F, "The next-tick sword impulse was suppressed");
+
+            var swordFirst = test.makeMockPlayer(GameType.SURVIVAL);
+            swordFirst.setPos(attacker.position().add(0, 0, 1.5));
+            swordFirst.setOnGround(true);
+            attacker.attack(swordFirst);
+            test.assertTrue(swordFirst.getHealth() < swordFirst.getMaxHealth(), "Sword should land first");
+            var beforeRod = swordFirst.getDeltaMovement();
+            rodImpact(hook, swordFirst);
+            test.assertTrue(swordFirst.getDeltaMovement().equals(beforeRod), "Rod stacked its impulse on a same-tick sword");
+            test.succeed();
+        });
+    }
+
+    private static void rodImpact(FishingHook hook, Player victim) {
+        FishingRodKnockbackHandler.onBobberImpact(new ProjectileImpactEvent(hook, new EntityHitResult(victim)));
     }
 
     private static void checkImpulse(GameTestHelper test, Player attacker, double horizontal, double vertical, String scenario) {

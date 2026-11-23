@@ -80,10 +80,7 @@ public final class FishingRodKnockbackHandler {
             DuelTrace.event(owner, target, "rod_entity_impact", "hook", hook.getId(), "ageTicks", hook.tickCount,
                     "x", location.x, "y", location.y, "z", location.z, "targetGrounded", target.onGround());
         }
-        if (target instanceof Player targetPlayer && ClassicPvpHandler.isClassicPvpHitLocked(targetPlayer)) {
-            ClassicPvpHandler.traceHitLock(owner, targetPlayer, "rod_rejected");
-            return;
-        }
+        if (target instanceof Player targetPlayer && ClassicPvpHandler.rodImpulseBlocked(owner, targetPlayer)) return;
 
         owner.level().playSound(null, target.getX(), target.getY(), target.getZ(),
                 SoundEvents.PLAYER_HURT, SoundSource.PLAYERS, 1.0F, 1.0F);
@@ -114,8 +111,8 @@ public final class FishingRodKnockbackHandler {
                     "vx", sentMotion.x, "vy", sentMotion.y, "vz", sentMotion.z,
                     "oldVx", oldMovement.x, "oldVy", oldMovement.y, "oldVz", oldMovement.z);
         }
-        if (target instanceof Player targetPlayer) {
-            ClassicPvpHandler.markClassicPvpHit(targetPlayer);
+        if (target instanceof Player targetPlayer && !sentMotion.equals(oldMovement)) {
+            ClassicPvpHandler.markRodImpulse(targetPlayer);
         }
     }
 

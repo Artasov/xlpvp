@@ -1,6 +1,7 @@
 package com.xlpvp.mixin;
 
 import com.xlpvp.client.ClientDuelTraceView;
+import com.xlpvp.client.ClassicPvpInput;
 import com.xlpvp.trace.ClientDuelTrace;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -15,8 +16,11 @@ public abstract class ClientDuelTraceRenderMixin {
     @Inject(method = "renderLevel", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/GameRenderer;pick(F)V", shift = At.Shift.AFTER))
     private void xlpvp$captureFramePick(DeltaTracker delta, CallbackInfo ci) {
+        Minecraft game = Minecraft.getInstance();
+        float partialTick = delta.getGameTimeDeltaPartialTick(true);
+        ClassicPvpInput.render(game, partialTick);
         if (ClientDuelTrace.active()) {
-            ClientDuelTraceView.render(Minecraft.getInstance(), delta.getGameTimeDeltaPartialTick(true));
+            ClientDuelTraceView.render(game, partialTick);
         }
     }
 }

@@ -19,39 +19,32 @@ import java.util.Objects;
 public final class FishingHookVisual {
     private static final int PREDICTION_TICKS = 8;
     private static final int BLEND_TICKS = 3;
-    private final Map<Integer, HookContact> localHits = new HashMap<>();
-    @Nullable private HookContact prediction;
+    private final Map<Integer, LocalContact> localHits = new HashMap<>();
+    @Nullable private HookContact approachContact;
     @Nullable private HookContact metadataContact;
     @Nullable private HookContact lastGoal;
     @Nullable private FramePoint previous;
     @Nullable private FramePoint current;
     @Nullable private AirStep approach;
-    private int predictionTick;
     private int blendRemaining;
-    private Vec3 castDirection = Vec3.ZERO;
-    private double farEdge;
 
     public void predict(FishingHook hook, Entity target) {
         if (approach != null && approach.target == target) return;
         if (localHits.containsKey(target.getId())) return;
         HookContact hit = HookContact.capture(hook, target);
-        localHits.put(target.getId(), hit);
-        if (prediction == null) {
-            prediction = hit;
-            predictionTick = hook.tickCount;
-            castDirection = hook.getDeltaMovement().normalize();
-            AABB box = target.getBoundingBox().inflate(0.3F);
-            Vec3 farCorner = new Vec3(castDirection.x >= 0 ? box.maxX : box.minX,
-                    castDirection.y >= 0 ? box.maxY : box.minY, castDirection.z >= 0 ? box.maxZ : box.minZ);
-            farEdge = farCorner.dot(castDirection);
-            ClientDuelTrace.rod("rod_predicted_contact", hook, target.getId());
-        }
+        Vec3 direction = hook.getDeltaMovement().normalize();
+        AABB box = target.getBoundingBox().inflate(0.3F);
+        Vec3 farCorner = new Vec3(direction.x >= 0 ? box.maxX : box.minX,
+                direction.y >= 0 ? box.maxY : box.minY, direction.z >= 0 ? box.maxZ : box.minZ);
+        localHits.put(target.getId(), new LocalContact(hit, hook.tickCount, direction, farCorner.dot(direction)));
+        if (hook.level().isClientSide()) ClientDuelTrace.rod("rod_predicted_contact", hook, target.getId());
     }
 
     public void syncedTarget(FishingHook hook, int syncedId, @Nullable Entity target) {
         // Metadata has the ID but no surface point. Some servers never send the optional payload.
         metadataContact = target == null ? null : HookContact.capture(hook, target);
-        if (prediction != null && syncedId != prediction.targetId()) prediction = null;
+        localHits.keySet().removeIf(id -> id != syncedId);
+        if (approachContact != null && approachContact.targetId() != syncedId) approachContact = null;
     }
 
     public void confirmedDuringFlight(FishingHook hook, Entity target, Vec3 velocity) {
@@ -71,6 +64,17 @@ public final class FishingHookVisual {
 
     public boolean tick(FishingHook hook, @Nullable HookContact serverContact, int syncedId) {
         int confirmedId = serverContact == null ? syncedId : serverContact.targetId();
+        if (confirmedId < 0) {
+            // The position codec tracks the last actual server movement, even while rendering is interpolated.
+            Vec3 serverPosition = hook.getPositionCodec().getBase();
+            localHits.values().removeIf(hit -> {
+                if (!hit.expired(hook.tickCount, serverPosition)) return false;
+                if (hook.level().isClientSide()) ClientDuelTrace.rod("rod_prediction_expired", hook, hit.point.targetId());
+                return true;
+            });
+        } else {
+            localHits.keySet().removeIf(id -> id != confirmedId);
+        }
         boolean arrived = false;
         if (approach != null && (confirmedId != approach.target.getId() || approach.target.isRemoved() || approach.inWater(hook)
                 || localHits.containsKey(confirmedId))) approach = null;
@@ -78,7 +82,7 @@ public final class FishingHookVisual {
             HitResult block = approach.clipBlocks(hook);
             HookContact hit = HookContact.traceBody(hook, approach.target, approach.start, block.getLocation());
             if (hit != null) {
-                localHits.put(confirmedId, hit);
+                approachContact = hit;
                 arrived = true;
             } else if (block.getType() == HitResult.Type.MISS && approach.remaining > 1) {
                 previous = current == null ? FramePoint.world(approach.start) : current;
@@ -88,31 +92,19 @@ public final class FishingHookVisual {
             }
             approach = null;
         }
-        if (prediction != null && confirmedId < 0) {
-            // ClientPacketListener only advances this base for an actual server position update.
-            Vec3 serverPosition = hook.getPositionCodec().getBase();
-            if (serverPosition.dot(castDirection) > farEdge + 1.0 / 4096
-                    || hook.tickCount - predictionTick >= PREDICTION_TICKS) {
-                ClientDuelTrace.rod("rod_prediction_expired", hook, prediction.targetId());
-                prediction = null;
-            }
-        }
-        if (metadataContact == null && syncedId >= 0 && prediction == null && serverContact == null) {
+        if (metadataContact == null && syncedId >= 0 && serverContact == null) {
             Entity tracked = hook.level().getEntity(syncedId);
             if (tracked != null) metadataContact = HookContact.capture(hook, tracked);
         }
-        HookContact goal = confirmedId >= 0 ? localHits.get(confirmedId) : prediction;
-        if (goal == null) goal = serverContact;
-        if (goal == null) goal = metadataContact;
+        // A local hit may refine the contact point only after the server has identified the target.
+        HookContact goal = confirmedId < 0 ? null : confirmedContact(confirmedId, serverContact);
         Entity target = goal == null ? null : hook.level().getEntity(goal.targetId());
         if (target == null || target.isRemoved()) goal = null;
 
         if (current == null && goal == null) return confirmedId >= 0 || !localHits.isEmpty();
         previous = current == null ? FramePoint.world(new Vec3(hook.xOld, hook.yOld, hook.zOld)) : current;
         if (!Objects.equals(lastGoal, goal)) {
-            // A local ray hit is the natural endpoint of this tick's flight segment.
-            boolean hitThisTick = goal != null && goal == prediction && hook.tickCount == predictionTick;
-            blendRemaining = hitThisTick || arrived ? 1 : BLEND_TICKS;
+            blendRemaining = arrived ? 1 : BLEND_TICKS;
         } else if (goal == null && blendRemaining == 0) {
             previous = current = null;
             return confirmedId >= 0 || !localHits.isEmpty();
@@ -128,6 +120,15 @@ public final class FishingHookVisual {
         return true;
     }
 
+    @Nullable
+    private HookContact confirmedContact(int id, @Nullable HookContact serverContact) {
+        if (approachContact != null && approachContact.targetId() == id) return approachContact;
+        LocalContact local = localHits.get(id);
+        if (local != null) return local.point;
+        if (serverContact != null) return serverContact;
+        return metadataContact != null && metadataContact.targetId() == id ? metadataContact : null;
+    }
+
     public boolean isAttachedTo(Entity target) {
         return current != null && current.target == target;
     }
@@ -136,6 +137,12 @@ public final class FishingHookVisual {
     public Vec3 position(float partialTick) {
         if (previous == null || current == null) return null;
         return previous.at(partialTick).lerp(current.at(partialTick), partialTick);
+    }
+
+    private record LocalContact(HookContact point, int tick, Vec3 direction, double farEdge) {
+        boolean expired(int now, Vec3 serverPosition) {
+            return now - tick >= PREDICTION_TICKS || serverPosition.dot(direction) > farEdge + 1.0 / 4096;
+        }
     }
 
     private record AirStep(Entity target, Vec3 start, Vec3 motion, int remaining) {
