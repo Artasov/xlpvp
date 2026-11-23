@@ -18,12 +18,15 @@ public final class ClassicPvpInput {
     private static final long MAX_FRAME_AGE_NANOS = 100_000_000L;
     private static final int MAX_PENDING_CLICKS = 32;
     private static final double MAX_FRAME_MOVEMENT_SQR = 4.0 * 4.0;
+    private static final double MAX_EYE_MOVEMENT_SQR = 0.40 * 0.40;
+    private static final double MIN_LOOK_DOT = Math.cos(Math.toRadians(8.0));
+    private static final double RAY_END_EPSILON = 1.0e-4;
     private static final ArrayDeque<Click> pending = new ArrayDeque<>();
     private static AimFrame lastFrame;
 
     private ClassicPvpInput() {}
 
-    private record AimFrame(long at, UUID player, Vec3 playerPos, int targetId, UUID target, Vec3 targetPos, Vec3 direction) {}
+    private record AimFrame(long at, UUID player, Vec3 eye, int targetId, UUID target, Vec3 targetPos, Vec3 direction) {}
     public record Click(long at, AimFrame aim) {}
 
     public static void render(Minecraft game, float partialTick) {
@@ -31,8 +34,8 @@ public final class ClassicPvpInput {
         if (canAttack(player) && game.getCameraEntity() == player && game.options.getCameraType().isFirstPerson()
                 && game.hitResult instanceof EntityHitResult hit && canHitPlayer(player, hit)) {
             Entity target = hit.getEntity();
-            lastFrame = new AimFrame(System.nanoTime(), player.getUUID(), player.position(), target.getId(), target.getUUID(),
-                    target.position(), player.getViewVector(partialTick));
+            lastFrame = new AimFrame(System.nanoTime(), player.getUUID(), player.getEyePosition(partialTick),
+                    target.getId(), target.getUUID(), target.position(), player.getViewVector(partialTick));
         } else {
             lastFrame = null;
         }
@@ -64,16 +67,26 @@ public final class ClassicPvpInput {
         LocalPlayer player = game.player;
         AimFrame frame = click.aim();
         if (!canAttack(player) || game.getCameraEntity() != player || !frame.player().equals(player.getUUID())
-                || System.nanoTime() - frame.at() > MAX_FRAME_AGE_NANOS
-                || player.position().distanceToSqr(frame.playerPos()) >= MAX_FRAME_MOVEMENT_SQR) return null;
+                || System.nanoTime() - frame.at() > MAX_FRAME_AGE_NANOS) return null;
+        Vec3 eye = player.getEyePosition();
+        if (eye.distanceToSqr(frame.eye()) > MAX_EYE_MOVEMENT_SQR
+                || player.getViewVector(1.0F).dot(frame.direction()) < MIN_LOOK_DOT) return null;
         Entity target = player.level().getEntity(frame.targetId());
         if (!isAttackablePlayer(target) || !frame.target().equals(target.getUUID())
                 || target.position().distanceToSqr(frame.targetPos()) >= MAX_FRAME_MOVEMENT_SQR) return null;
 
-        // Keep the click's aim. Recast from the current eye against live entities and blocks.
         double reach = player.entityInteractionRange();
-        Vec3 eye = player.getEyePosition();
-        Vec3 ray = frame.direction().scale(reach);
+        // Resolve the click against the live box from the drawn eye. Then verify that
+        // the same point remains reachable and unobstructed from the current eye.
+        var box = target.getBoundingBox();
+        Vec3 point = box.contains(frame.eye()) ? frame.eye()
+                : box.clip(frame.eye(), frame.eye().add(frame.direction().scale(reach))).orElse(null);
+        if (point == null) return null;
+        Vec3 toward = point.subtract(eye);
+        double distance = toward.length();
+        if (distance >= reach) return null;
+        Vec3 ray = distance == 0.0 ? frame.direction().scale(RAY_END_EPSILON)
+                : toward.scale(Math.min(reach, distance + RAY_END_EPSILON) / distance);
         HitResult block = player.level().clip(new ClipContext(eye, eye.add(ray), ClipContext.Block.OUTLINE,
                 ClipContext.Fluid.NONE, player));
         double limit = block.getType() == HitResult.Type.MISS ? reach * reach : block.getLocation().distanceToSqr(eye);
