@@ -38,7 +38,8 @@ public abstract class ClientArenaTrackingMixin {
             entity.setOldPosAndRot();
             lerp.call(entity, x, y, z, yaw, pitch, 0);
         } else {
-            xlpvp$smoothArenaPosition(entity, x, y, z, yaw, pitch, steps, lerp, "absolute");
+            xlpvp$traceArenaTrack(entity, x, y, z, steps, "absolute");
+            lerp.call(entity, x, y, z, yaw, pitch, steps);
         }
     }
 
@@ -47,22 +48,15 @@ public abstract class ClientArenaTrackingMixin {
     private void xlpvp$applyArenaRelativePosition(Entity entity, double x, double y, double z, float yaw,
                                                 float pitch, int steps, Operation<Void> lerp,
                                                 @Local(argsOnly = true) ClientboundMoveEntityPacket packet) {
-        xlpvp$smoothArenaPosition(entity, x, y, z, yaw, pitch, steps, lerp, packet.hasPosition() ? "relative" : null);
-    }
-
-    @Unique
-    private static void xlpvp$smoothArenaPosition(Entity entity, double x, double y, double z, float yaw,
-                                                float pitch, int steps, Operation<Void> lerp, String trackedPosition) {
-        if (xlpvp$isArenaRemotePlayer(entity)) {
-            steps = ArenaTracking.interpolationSteps(x - entity.getX(), z - entity.getZ());
-            if (trackedPosition != null) xlpvp$traceArenaTrack(entity, x, y, z, steps, trackedPosition);
-        }
+        if (packet.hasPosition()) xlpvp$traceArenaTrack(entity, x, y, z, steps, "relative");
+        // Keep vanilla smoothing even when the arena tracker sends a position every tick.
         lerp.call(entity, x, y, z, yaw, pitch, steps);
     }
 
     @Unique
     private static void xlpvp$traceArenaTrack(Entity entity, double x, double y, double z, int steps, String packet) {
-        if (ClientDuelTrace.active() && entity.getUUID().equals(ClientDuelTrace.opponent())) {
+        if (ClientDuelTrace.active() && entity.getUUID().equals(ClientDuelTrace.opponent())
+                && xlpvp$isArenaRemotePlayer(entity)) {
             ClientDuelTrace.event("arena_track_in", "targetEntityId", entity.getId(), "packet", packet, "steps", steps,
                     "renderedX", entity.getX(), "renderedY", entity.getY(), "renderedZ", entity.getZ(),
                     "x", x, "y", y, "z", z);

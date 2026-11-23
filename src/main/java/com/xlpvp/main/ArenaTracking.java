@@ -9,7 +9,6 @@ public final class ArenaTracking {
     private static final Pattern WORLD_NAME = Pattern.compile(
             "(duel|hg|sw|hgm|swm)_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
     private static final double DISCONTINUITY_DISTANCE_SQUARED = 16.0;
-    private static final double QUICK_LERP_DISTANCE_SQUARED = 0.75 * 0.75;
 
     private ArenaTracking() {}
 
@@ -25,9 +24,4 @@ public final class ArenaTracking {
         return lastTrackedPosition.distanceToSqr(x, y, z) > DISCONTINUITY_DISTANCE_SQUARED;
     }
 
-    public static int interpolationSteps(double dx, double dz) {
-        // Count the render's interpolation between client ticks separately. Closing a larger
-        // gap after knockback in one tick still draws continuous frames between positions.
-        return dx * dx + dz * dz >= QUICK_LERP_DISTANCE_SQUARED ? 1 : 2;
-    }
 }
