@@ -4,7 +4,6 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.xlpvp.Core;
 import com.xlpvp.trace.DuelTrace;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -13,7 +12,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -53,11 +51,6 @@ public final class ClassicPvpHandler {
     }
 
     @SubscribeEvent
-    public static void onLeaveLevel(EntityLeaveLevelEvent e) {
-        if (e.getEntity() instanceof ServerPlayer player) clearCombatState(player.getUUID());
-    }
-
-    @SubscribeEvent
     public static void onChangedDimension(PlayerEvent.PlayerChangedDimensionEvent e) {
         Player player = e.getEntity();
         clearCombatState(player.getUUID());
@@ -66,8 +59,7 @@ public final class ClassicPvpHandler {
 
     private static void clearCombatState(UUID id) {
         USED_SPRINT.remove(id);
-        LAST_MELEE_HIT.remove(id);
-        LAST_ROD_HIT.remove(id);
+        LAST_PVP_HIT.remove(id);
     }
 
     private static void applyFastAttack(Player p) {
@@ -87,21 +79,18 @@ public final class ClassicPvpHandler {
     private static final Set<UUID> USED_SPRINT = ConcurrentHashMap.newKeySet();
     private static final ThreadLocal<AttackKnockback> CURRENT_ATTACK = new ThreadLocal<>();
 
-    private static final Map<UUID, Long> LAST_MELEE_HIT = new ConcurrentHashMap<>();
-    private static final Map<UUID, Long> LAST_ROD_HIT = new ConcurrentHashMap<>();
+    private static final Map<UUID, Long> LAST_PVP_HIT = new ConcurrentHashMap<>();
 
     private static final class AttackKnockback {
         final Player attacker;
         final Player target;
         final boolean strong;
-        final boolean rodImpulseThisTick;
         boolean skipNextKnockback;
 
         AttackKnockback(Player attacker, Player target) {
             this.attacker = attacker;
             this.target = target;
             this.strong = !attacker.level().isClientSide() && attacker.isSprinting() && !USED_SPRINT.contains(attacker.getUUID());
-            this.rodImpulseThisTick = recentHit(LAST_ROD_HIT, target, 1) != null;
         }
     }
 
@@ -157,49 +146,40 @@ public final class ClassicPvpHandler {
         return player.canInteractWithEntity(target.getBoundingBox(), OLD_PVP_REACH_EXTRA);
     }
 
-    private static Long recentHit(Map<UUID, Long> hits, Player target, long ticks) {
+    public static boolean isClassicPvpHitLocked(Player target) {
         UUID targetId = target.getUUID();
-        Long lastHitTick = hits.get(targetId);
-        if (lastHitTick == null) return null;
+        Long lastHitTick = LAST_PVP_HIT.get(targetId);
+        if (lastHitTick == null) {
+            return false;
+        }
+
         long serverTick = getServerTick(target);
-        if (serverTick == Long.MIN_VALUE) return null;
-        long age = serverTick - lastHitTick;
-        if (age < 0 || age >= OLD_PVP_HIT_LOCK_TICKS) {
-            hits.remove(targetId, lastHitTick);
-            return null;
+        if (serverTick == Long.MIN_VALUE) {
+            LAST_PVP_HIT.remove(targetId, lastHitTick);
+            return false;
         }
-        return age < ticks ? lastHitTick : null;
-    }
 
-    private static void traceHitLock(Player attacker, Player target, String event, Long lastHit, String source) {
-        if (DuelTrace.pair(attacker, target)) {
-            DuelTrace.event(attacker, target, event, "reason", "hit_lock", "lastHitTick", lastHit,
-                    "lockSource", source, "lockTicks", OLD_PVP_HIT_LOCK_TICKS);
-        }
-    }
-
-    static boolean rodImpulseBlocked(Player owner, Player target) {
-        Long lastRod = recentHit(LAST_ROD_HIT, target, OLD_PVP_HIT_LOCK_TICKS);
-        if (lastRod != null) {
-            traceHitLock(owner, target, "rod_rejected", lastRod, "rod");
+        long elapsedTicks = serverTick - lastHitTick;
+        if (elapsedTicks >= 0L && elapsedTicks < OLD_PVP_HIT_LOCK_TICKS) {
             return true;
         }
-        Long sameTickMelee = recentHit(LAST_MELEE_HIT, target, 1);
-        if (sameTickMelee == null) return false;
-        if (DuelTrace.pair(owner, target)) {
-            DuelTrace.event(owner, target, "rod_rejected", "reason", "same_tick_melee", "lastHitTick", sameTickMelee);
+
+        LAST_PVP_HIT.remove(targetId, lastHitTick);
+        return false;
+    }
+
+    static void traceHitLock(Player attacker, Player target, String event) {
+        if (DuelTrace.pair(attacker, target)) {
+            Long last = LAST_PVP_HIT.get(target.getUUID());
+            DuelTrace.event(attacker, target, event, "reason", "hit_lock", "lastHitTick", last,
+                    "lockTicks", OLD_PVP_HIT_LOCK_TICKS);
         }
-        return true;
     }
 
-    static void markRodImpulse(Player target) {
-        markHit(LAST_ROD_HIT, target);
-    }
-
-    private static void markHit(Map<UUID, Long> hits, Player target) {
+    public static void markClassicPvpHit(Player target) {
         long serverTick = getServerTick(target);
         if (serverTick != Long.MIN_VALUE) {
-            hits.put(target.getUUID(), serverTick);
+            LAST_PVP_HIT.put(target.getUUID(), serverTick);
         }
     }
 
@@ -226,15 +206,12 @@ public final class ClassicPvpHandler {
         if (attack == null || attack.attacker != attacker || attack.target != target || attacker.level().isClientSide()) return;
         // Player.attack can request a second vanilla knockback after the damage impulse.
         attack.skipNextKnockback = true;
-        markHit(LAST_MELEE_HIT, attack.target);
-        boolean sprintBonus = attack.strong && !attack.rodImpulseThisTick;
-        if (sprintBonus) {
+        if (attack.strong) {
             USED_SPRINT.add(attacker.getUUID());
         }
-        double extra = attack.rodImpulseThisTick ? 0
-                : weaponKnockback * EXTRA_KNOCKBACK_PER_LEVEL + (sprintBonus ? SPRINT_KNOCKBACK_BONUS : 0);
+        double extra = weaponKnockback * EXTRA_KNOCKBACK_PER_LEVEL + (attack.strong ? SPRINT_KNOCKBACK_BONUS : 0);
         if (DuelTrace.pair(attacker, target)) {
-            DuelTrace.event(attacker, target, "melee_accepted", "sprintBonus", sprintBonus,
+            DuelTrace.event(attacker, target, "melee_accepted", "sprintBonus", attack.strong,
                     "weaponKnockback", weaponKnockback, "extraStrengthRequested", extra);
         }
         if (extra <= 0 || attack.target.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE) >= 1.0) return;
@@ -245,6 +222,7 @@ public final class ClassicPvpHandler {
         if (DuelTrace.pair(attacker, target)) {
             traceVelocity(attacker, target, "melee_sprint_or_weapon_impulse", target.getDeltaMovement());
         }
+        markClassicPvpHit(attack.target);
     }
 
     @SubscribeEvent
@@ -259,9 +237,8 @@ public final class ClassicPvpHandler {
             return;
         }
         if (!(e.getTarget() instanceof Player target)) return;
-        Long lastMelee = recentHit(LAST_MELEE_HIT, target, OLD_PVP_HIT_LOCK_TICKS);
-        if (lastMelee != null) {
-            traceHitLock(attacker, target, "melee_rejected", lastMelee, "melee");
+        if (isClassicPvpHitLocked(target)) {
+            traceHitLock(attacker, target, "melee_rejected");
             e.setCanceled(true);
         }
     }
@@ -282,12 +259,6 @@ public final class ClassicPvpHandler {
             return;
         }
         knockback.skipNextKnockback = true;
-        if (knockback.rodImpulseThisTick) {
-            if (DuelTrace.pair(knockback.attacker, victim)) {
-                DuelTrace.event(knockback.attacker, victim, "melee_impulse_skipped", "reason", "same_tick_rod");
-            }
-            return;
-        }
         if (victim.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE) >= 1.0D) {
             if (DuelTrace.pair(knockback.attacker, victim)) {
                 DuelTrace.event(knockback.attacker, victim, "melee_impulse_resisted");
@@ -314,6 +285,7 @@ public final class ClassicPvpHandler {
         if (DuelTrace.pair(knockback.attacker, victim)) {
             traceVelocity(knockback.attacker, victim, "melee_base_impulse", victim.getDeltaMovement());
         }
+        markClassicPvpHit(knockback.target);
     }
 
     private static void traceVelocity(Player attacker, Entity target, String kind, Vec3 motion) {

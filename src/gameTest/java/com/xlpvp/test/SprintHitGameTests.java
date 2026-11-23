@@ -88,48 +88,40 @@ public final class SprintHitGameTests {
     }
 
     @GameTest(template = "empty")
-    public static void rodDoesNotBlockSwordDamageOrStackSameTickImpulse(GameTestHelper test) {
+    public static void swordAndRodShareTenTickHitProtection(GameTestHelper test) {
         var attacker = test.makeMockServerPlayerInLevel();
         attacker.setGameMode(GameType.SURVIVAL);
         attacker.setPos(test.absoluteVec(new Vec3(1.5, 1, 1.5)));
         attacker.setYRot(0);
         attacker.setSprinting(true);
         attacker.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.IRON_SWORD));
-        var sameTick = test.makeMockPlayer(GameType.SURVIVAL);
-        sameTick.setPos(attacker.position().add(0, 0, 1.5));
-        sameTick.setOnGround(true);
+        var rodFirst = test.makeMockPlayer(GameType.SURVIVAL);
+        rodFirst.setPos(attacker.position().add(0, 0, 1.5));
+        rodFirst.setOnGround(true);
         var hook = new FishingHook(attacker, test.getLevel(), 0, 0);
-        rodImpact(hook, sameTick);
-        var firstImpulse = sameTick.getDeltaMovement();
+        rodImpact(hook, rodFirst);
+        var firstImpulse = rodFirst.getDeltaMovement();
         test.assertTrue(firstImpulse.z > 0.4, "Rod should apply its impulse");
-        attacker.attack(sameTick);
-        test.assertTrue(sameTick.getHealth() < sameTick.getMaxHealth(), "Sword damage was blocked after a rod hit");
-        test.assertTrue(sameTick.getDeltaMovement().equals(firstImpulse), "A second same-tick impulse was applied");
-        float health = sameTick.getHealth();
-        attacker.attack(sameTick);
-        test.assertTrue(sameTick.getHealth() == health, "Sword immunity was lost");
+        attacker.attack(rodFirst);
+        test.assertTrue(rodFirst.getHealth() == rodFirst.getMaxHealth(), "Sword dealt damage on the rod impact tick");
+        test.assertTrue(rodFirst.getDeltaMovement().equals(firstImpulse), "Sword added a second impulse on the rod impact tick");
 
-        var nextTick = test.makeMockPlayer(GameType.SURVIVAL);
-        nextTick.setPos(attacker.position().add(0, 0, 1.5));
-        nextTick.setOnGround(true);
-        rodImpact(hook, nextTick);
-        test.runAfterDelay(1, () -> {
-            nextTick.setDeltaMovement(Vec3.ZERO);
-            rodImpact(hook, nextTick);
-            test.assertTrue(nextTick.getDeltaMovement().equals(Vec3.ZERO), "Rod-to-rod cooldown was lost");
-            attacker.attack(nextTick);
-            test.assertTrue(nextTick.getHealth() < nextTick.getMaxHealth(), "Sword could not follow a rod on the next tick");
-            var swordImpulse = nextTick.getDeltaMovement();
-            test.assertTrue(swordImpulse.z >= 0.4F, "The next-tick sword impulse was suppressed");
+        var swordFirst = test.makeMockPlayer(GameType.SURVIVAL);
+        swordFirst.setPos(attacker.position().add(0, 0, 1.5));
+        swordFirst.setOnGround(true);
+        attacker.attack(swordFirst);
+        test.assertTrue(swordFirst.getHealth() < swordFirst.getMaxHealth(), "Sword should land first");
 
-            var swordFirst = test.makeMockPlayer(GameType.SURVIVAL);
-            swordFirst.setPos(attacker.position().add(0, 0, 1.5));
-            swordFirst.setOnGround(true);
-            attacker.attack(swordFirst);
-            test.assertTrue(swordFirst.getHealth() < swordFirst.getMaxHealth(), "Sword should land first");
-            var beforeRod = swordFirst.getDeltaMovement();
+        test.runAfterDelay(9, () -> {
+            attacker.attack(rodFirst);
+            test.assertTrue(rodFirst.getHealth() == rodFirst.getMaxHealth(), "Shared protection expired before ten ticks");
+            swordFirst.setDeltaMovement(Vec3.ZERO);
             rodImpact(hook, swordFirst);
-            test.assertTrue(swordFirst.getDeltaMovement().equals(beforeRod), "Rod stacked its impulse on a same-tick sword");
+            test.assertTrue(swordFirst.getDeltaMovement().equals(Vec3.ZERO), "Rod bypassed a recent sword hit");
+        });
+        test.runAfterDelay(10, () -> {
+            attacker.attack(rodFirst);
+            test.assertTrue(rodFirst.getHealth() < rodFirst.getMaxHealth(), "Shared protection lasted longer than ten ticks");
             test.succeed();
         });
     }
