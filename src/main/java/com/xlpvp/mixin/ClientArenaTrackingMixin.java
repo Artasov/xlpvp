@@ -17,6 +17,9 @@ import org.spongepowered.asm.mixin.injection.At;
 
 @Mixin(ClientPacketListener.class)
 public abstract class ClientArenaTrackingMixin {
+    @Unique
+    private static final int xlpvp$ARENA_SMOOTHING_TICKS = 3;
+
     @WrapOperation(method = "handleTeleportEntity", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/world/entity/Entity;syncPacketPositionCodec(DDD)V"))
     private void xlpvp$compareAbsoluteAgainstNetworkBaseline(Entity entity, double x, double y, double z,
@@ -38,7 +41,7 @@ public abstract class ClientArenaTrackingMixin {
             entity.setOldPosAndRot();
             lerp.call(entity, x, y, z, yaw, pitch, 0);
         } else {
-            int smoothing = xlpvp$isArenaRemotePlayer(entity) ? 2 : steps;
+            int smoothing = xlpvp$isArenaRemotePlayer(entity) ? xlpvp$ARENA_SMOOTHING_TICKS : steps;
             xlpvp$traceArenaTrack(entity, x, y, z, smoothing, "absolute");
             lerp.call(entity, x, y, z, yaw, pitch, smoothing);
         }
@@ -49,7 +52,7 @@ public abstract class ClientArenaTrackingMixin {
     private void xlpvp$applyArenaRelativePosition(Entity entity, double x, double y, double z, float yaw,
                                                 float pitch, int steps, Operation<Void> lerp,
                                                 @Local(argsOnly = true) ClientboundMoveEntityPacket packet) {
-        int smoothing = xlpvp$isArenaRemotePlayer(entity) ? 2 : steps;
+        int smoothing = xlpvp$isArenaRemotePlayer(entity) ? xlpvp$ARENA_SMOOTHING_TICKS : steps;
         if (packet.hasPosition()) xlpvp$traceArenaTrack(entity, x, y, z, smoothing, "relative");
         lerp.call(entity, x, y, z, yaw, pitch, smoothing);
     }
