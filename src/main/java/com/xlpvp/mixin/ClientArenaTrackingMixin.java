@@ -38,8 +38,9 @@ public abstract class ClientArenaTrackingMixin {
             entity.setOldPosAndRot();
             lerp.call(entity, x, y, z, yaw, pitch, 0);
         } else {
-            xlpvp$traceArenaTrack(entity, x, y, z, steps, "absolute");
-            lerp.call(entity, x, y, z, yaw, pitch, steps);
+            int smoothing = xlpvp$isArenaRemotePlayer(entity) ? 2 : steps;
+            xlpvp$traceArenaTrack(entity, x, y, z, smoothing, "absolute");
+            lerp.call(entity, x, y, z, yaw, pitch, smoothing);
         }
     }
 
@@ -48,9 +49,9 @@ public abstract class ClientArenaTrackingMixin {
     private void xlpvp$applyArenaRelativePosition(Entity entity, double x, double y, double z, float yaw,
                                                 float pitch, int steps, Operation<Void> lerp,
                                                 @Local(argsOnly = true) ClientboundMoveEntityPacket packet) {
-        if (packet.hasPosition()) xlpvp$traceArenaTrack(entity, x, y, z, steps, "relative");
-        // Keep vanilla smoothing even when the arena tracker sends a position every tick.
-        lerp.call(entity, x, y, z, yaw, pitch, steps);
+        int smoothing = xlpvp$isArenaRemotePlayer(entity) ? 2 : steps;
+        if (packet.hasPosition()) xlpvp$traceArenaTrack(entity, x, y, z, smoothing, "relative");
+        lerp.call(entity, x, y, z, yaw, pitch, smoothing);
     }
 
     @Unique

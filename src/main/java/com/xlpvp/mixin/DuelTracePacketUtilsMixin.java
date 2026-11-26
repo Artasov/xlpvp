@@ -17,7 +17,7 @@ public abstract class DuelTracePacketUtilsMixin {
     // The network-thread invocation throws; only the server-thread invocation returns.
     @Inject(method = "ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/util/thread/BlockableEventLoop;)V", at = @At("RETURN"))
     private static void xlpvp$processPacket(Packet<?> packet, PacketListener listener, BlockableEventLoop<?> loop, CallbackInfo ci) {
-        if (listener instanceof ServerGamePacketListenerImpl game && DuelTrace.active(game.player) && loop.isSameThread()) {
+        if (listener instanceof ServerGamePacketListenerImpl game && DuelTrace.active(game.player)) {
             TracePackets.inbound(game.player, packet);
         }
     }

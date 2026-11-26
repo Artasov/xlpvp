@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "ClassicFishingCastMixin",
+    "ClientDuelTraceInteractAccessor",
     "DuelTraceConnectionMixin",
     "DuelTracePacketUtilsMixin",
     "FishingHookMixin",
@@ -17,7 +18,6 @@
     "ClientArenaTrackingMixin",
     "ClientDuelTraceConnectionMixin",
     "ClientDuelTraceInputMixin",
-    "ClientDuelTraceInteractAccessor",
     "ClientDuelTraceMouseMixin",
     "ClientDuelTraceRenderMixin",
     "ArenaBorderRendererMixin",

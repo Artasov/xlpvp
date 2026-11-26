@@ -6,6 +6,7 @@ import java.util.UUID;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -26,7 +27,8 @@ public final class ClientDuelTraceView {
         Entity camera = game.getCameraEntity();
         if (camera == null) return;
         UUID opponent = ClientDuelTrace.opponent();
-        Entity target = opponent(game, opponent);
+        HitResult pick = game.hitResult;
+        Entity target = opponent == null ? pickedPlayer(pick) : opponent(game, opponent);
         AABB renderedBox = null;
         if (target != null) {
             // LevelRenderer.renderEntity interpolates xOld/yOld/zOld for the rendered entity.
@@ -35,8 +37,7 @@ public final class ClientDuelTraceView {
                     Mth.lerp(partialTick, target.yOld, target.getY()) - target.getY(),
                     Mth.lerp(partialTick, target.zOld, target.getZ()) - target.getZ());
         }
-        HitResult pick = game.hitResult;
-        latestFrame = new Frame(System.nanoTime(), opponent, partialTick, pickType(pick), pickId(pick),
+        latestFrame = new Frame(System.nanoTime(), target == null ? opponent : target.getUUID(), partialTick, pickType(pick), pickId(pick),
                 pick == null ? null : pick.getLocation(),
                 camera.getEyePosition(partialTick), camera.getViewVector(partialTick), renderedBox);
     }
@@ -46,19 +47,27 @@ public final class ClientDuelTraceView {
         Entity camera = game.getCameraEntity();
         if (player == null || camera == null) return;
         UUID opponent = ClientDuelTrace.opponent();
-        Entity target = opponent(game, opponent);
         HitResult tickPick = game.hitResult;
         Frame frame = latestFrame;
         long frameAge = frame == null ? -1 : (System.nanoTime() - frame.capturedAt()) / 1_000L;
-        if (frame != null && (frameAge > 250_000L || !Objects.equals(opponent, frame.opponent()))) {
+        if (frame != null && (frameAge > 250_000L || opponent != null && !Objects.equals(opponent, frame.opponent()))) {
             frame = null;
         }
         Vec3 eye = camera.getEyePosition(1.0F);
+        Entity target = opponent == null ? pickedPlayer(tickPick) : opponent(game, opponent);
+        if (target == null && opponent == null && frame != null && frame.opponent() != null) {
+            target = opponent(game, frame.opponent());
+        }
+        if (target == null && opponent == null) target = nearbyAlongLook(game, eye, camera.getViewVector(1.0F));
         ClientDuelTrace.event("attack_start", "gate", gate, "missTime", missTime,
                 "usingItem", player.isUsingItem(), "onGround", player.onGround(), "sprinting", player.isSprinting(),
                 "selectedSlot", player.getInventory().selected, "weapon", player.getMainHandItem().getItem().toString(),
                 "firstPerson", game.options.getCameraType().isFirstPerson(), "reach", player.entityInteractionRange(),
                 "eye", vector(eye), "look", vector(camera.getViewVector(1.0F)),
+                "targetUuid", target == null ? null : target.getUUID(), "targetEntityId", target == null ? null : target.getId(),
+                "frameTargetUuid", frame == null ? null : frame.opponent(),
+                "frameDistanceToBox", frame == null || frame.renderedOpponent() == null ? null
+                        : Math.sqrt(frame.renderedOpponent().distanceToSqr(frame.eye())),
                 "opponentBox", target == null ? null : box(target.getBoundingBox()),
                 "opponentDistanceToBox", target == null ? null : Math.sqrt(target.getBoundingBox().distanceToSqr(eye)),
                 "tickPick", pickType(tickPick), "tickPickId", pickId(tickPick), "tickPickAt", pickPoint(tickPick),
@@ -76,6 +85,26 @@ public final class ClientDuelTraceView {
             if (id.equals(candidate.getUUID())) return candidate;
         }
         return null;
+    }
+
+    private static Player pickedPlayer(HitResult pick) {
+        return pick instanceof EntityHitResult hit && hit.getEntity() instanceof Player target ? target : null;
+    }
+
+    private static Player nearbyAlongLook(Minecraft game, Vec3 eye, Vec3 look) {
+        if (game.level == null) return null;
+        Player closest = null;
+        double best = 36.0;
+        for (Player target : game.level.players()) {
+            if (target == game.player || !target.isAlive() || target.isSpectator()) continue;
+            var toward = target.getBoundingBox().getCenter().subtract(eye);
+            double distance = toward.lengthSqr();
+            if (distance < best && toward.normalize().dot(look) > 0.95) {
+                best = distance;
+                closest = target;
+            }
+        }
+        return closest;
     }
 
     private static String pickType(HitResult pick) { return pick == null ? "NONE" : pick.getType().name(); }

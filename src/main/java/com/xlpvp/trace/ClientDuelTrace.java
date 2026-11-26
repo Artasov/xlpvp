@@ -7,12 +7,15 @@ import com.xlpvp.Core;
 import com.xlpvp.client.ClientDuelTraceView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.entity.projectile.FishingHook;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.io.BufferedWriter;
@@ -42,35 +45,53 @@ public final class ClientDuelTrace {
     }
 
     static void control(DuelTracePackets.Control signal) {
+        control(signal.trace(), signal.duel(), signal.opponent(), "duel", signal.start());
+    }
+
+    static void control(DuelTracePackets.ArenaControl signal) {
+        control(signal.match(), signal.match(), null, signal.mode(), signal.start());
+    }
+
+    private static void control(UUID trace, UUID match, UUID opponent, String mode, boolean start) {
         Recording recording = current;
-        if (!signal.start()) {
-            if (recording != null && recording.trace.equals(signal.trace())) stop("server_stop");
+        boolean duel = opponent != null;
+        String relativeDirectory = duel ? "logs/duel-traces" : "logs/arena-traces";
+        if (!start) {
+            if (recording != null && recording.trace.equals(trace)) stop("server_stop");
             return;
         }
 
         var player = Minecraft.getInstance().player;
-        if (player == null || recording != null && recording.trace.equals(signal.trace())) return;
+        if (player == null || recording != null && recording.trace.equals(trace)) return;
         stop("replaced");
         try {
-            Path directory = Files.createDirectories(FMLPaths.GAMEDIR.get().resolve("logs/duel-traces"));
-            Path file = Files.createTempFile(directory, "client-" + signal.trace() + "-", ".jsonl");
-            Recording next = new Recording(signal, file);
+            Path directory = Files.createDirectories(FMLPaths.GAMEDIR.get().resolve(relativeDirectory));
+            Path file = Files.createTempFile(directory, "client-" + trace + "-", ".jsonl");
+            Recording next = new Recording(trace, opponent, player.level().dimension(), file);
             current = next;
-            event("start", "format", 1, "utc", Instant.now(), "trace", signal.trace(), "duel", signal.duel(),
-                    "actor", player.getUUID(), "opponent", signal.opponent());
+            event("start", "format", 1, "utc", Instant.now(), "trace", trace, duel ? "duel" : "matchId", match,
+                    "mode", mode, "actor", player.getUUID(), "opponent", opponent);
             next.worker.start();
-            event("trace_ready", "trace", signal.trace());
-            PacketDistributor.sendToServer(new DuelTracePackets.Ready(signal.trace()));
-            player.displayClientMessage(Component.literal("Клиентская запись дуэли: logs/duel-traces/" + file.getFileName()), false);
+            event("trace_ready", "trace", trace);
+            PacketDistributor.sendToServer(new DuelTracePackets.Ready(trace));
+            player.displayClientMessage(Component.literal("Клиентская запись боя: " + relativeDirectory + "/" + file.getFileName()), false);
         } catch (IOException error) {
             LogUtils.getLogger().error("Could not open client duel trace", error);
-            player.displayClientMessage(Component.literal("Не удалось открыть файл клиентской записи дуэли."), false);
+            player.displayClientMessage(Component.literal("Не удалось открыть файл клиентской записи боя."), false);
         }
     }
 
     @SubscribeEvent
     public static void onLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         stop("disconnect");
+    }
+
+    @SubscribeEvent
+    public static void onTick(ClientTickEvent.Post event) {
+        Recording recording = current;
+        var player = Minecraft.getInstance().player;
+        if (recording != null && recording.opponent == null && player != null
+                && !recording.dimension.equals(player.level().dimension())) stop("left_arena");
     }
 
     private static void stop(String reason) {
@@ -114,17 +135,19 @@ public final class ClientDuelTrace {
 
     private static final class Recording {
         final UUID trace, opponent;
+        final ResourceKey<Level> dimension;
         final Path path;
         final BufferedWriter out;
         final Thread worker;
         final ArrayBlockingQueue<JsonObject> rows = new ArrayBlockingQueue<>(4096);
         final long start = System.nanoTime();
-        private long sequence, dropped;
+        private long sequence, dropped, attackOrdinal, clickOrdinal;
         private volatile String endReason;
 
-        Recording(DuelTracePackets.Control signal, Path path) throws IOException {
-            trace = signal.trace();
-            opponent = signal.opponent();
+        Recording(UUID trace, UUID opponent, ResourceKey<Level> dimension, Path path) throws IOException {
+            this.trace = trace;
+            this.opponent = opponent;
+            this.dimension = dimension;
             this.path = path;
             out = Files.newBufferedWriter(path);
             worker = new Thread(this::write, "xlpvp-client-duel-trace");
@@ -132,6 +155,11 @@ public final class ClientDuelTrace {
 
         synchronized void append(String kind, JsonObject row) {
             if (endReason != null) return;
+            if ("attack_start".equals(kind)) row.addProperty("clickOrdinal", ++clickOrdinal);
+            if ("out_attack".equals(kind)) {
+                row.addProperty("attackOrdinal", ++attackOrdinal);
+                row.addProperty("clickOrdinal", clickOrdinal);
+            }
             stamp(kind, row);
             if (!rows.offer(row)) dropped++;
         }

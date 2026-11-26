@@ -37,6 +37,23 @@ public final class DuelTracePackets {
         }
     }
 
+    public record ArenaControl(UUID match, String mode, boolean start) implements CustomPacketPayload {
+        private static final Type<ArenaControl> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Core.MODID, "arena_trace_control"));
+        private static final StreamCodec<ByteBuf, ArenaControl> CODEC = StreamCodec.composite(
+                UUIDUtil.STREAM_CODEC, ArenaControl::match,
+                ByteBufCodecs.STRING_UTF8, ArenaControl::mode,
+                ByteBufCodecs.BOOL, ArenaControl::start,
+                ArenaControl::new);
+
+        @Override public Type<ArenaControl> type() { return TYPE; }
+
+        boolean sendTo(ServerPlayer player) {
+            if (!player.connection.isAcceptingMessages() || !player.connection.hasChannel(TYPE)) return false;
+            player.connection.send(this);
+            return true;
+        }
+    }
+
     public record Ready(UUID trace) implements CustomPacketPayload {
         private static final Type<Ready> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Core.MODID, "duel_trace_ready"));
         private static final StreamCodec<ByteBuf, Ready> CODEC = UUIDUtil.STREAM_CODEC.map(Ready::new, Ready::trace);
@@ -48,8 +65,12 @@ public final class DuelTracePackets {
     public static void register(RegisterPayloadHandlersEvent event) {
         event.registrar("1").optional()
                 .playToClient(Control.TYPE, Control.CODEC, (signal, context) -> ClientDuelTrace.control(signal))
+                .playToClient(ArenaControl.TYPE, ArenaControl.CODEC, (signal, context) -> ClientDuelTrace.control(signal))
                 .playToServer(Ready.TYPE, Ready.CODEC, (ready, context) -> {
-                    if (context.player() instanceof ServerPlayer player) DuelTrace.clientReady(player, ready.trace());
+                    if (context.player() instanceof ServerPlayer player) {
+                        DuelTrace.clientReady(player, ready.trace());
+                        ArenaCombatTrace.ready(player, ready.trace());
+                    }
                 });
     }
 }

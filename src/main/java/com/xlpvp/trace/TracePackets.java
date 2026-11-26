@@ -2,6 +2,7 @@ package com.xlpvp.trace;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.xlpvp.mixin.ClientDuelTraceInteractAccessor;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.*;
 import net.minecraft.server.level.ServerPlayer;
@@ -24,12 +25,17 @@ public final class TracePackets {
                 || packet instanceof ServerboundPlayerCommandPacket || packet instanceof ServerboundAcceptTeleportationPacket;
     }
 
-    public static void received(Packet<?> packet) {
-        if (recordedInput(packet)) ARRIVALS.put(packet, System.nanoTime());
+    public static void received(ServerPlayer player, Packet<?> packet) {
+        if (recordedInput(player, packet)) ARRIVALS.put(packet, System.nanoTime());
+    }
+
+    private static boolean recordedInput(ServerPlayer player, Packet<?> packet) {
+        return DuelTrace.duelActive(player) ? recordedInput(packet)
+                : packet instanceof ServerboundInteractPacket || packet instanceof ServerboundSwingPacket;
     }
 
     public static void inbound(ServerPlayer actor, Packet<?> packet) {
-        if (!recordedInput(packet)) return;
+        if (!recordedInput(actor, packet)) return;
         Long received = ARRIVALS.asMap().remove(packet);
         // Missing for a synthetic packet, an upstream replacement, or an evicted timestamp.
         Long queueUs = received == null ? null : (System.nanoTime() - received) / 1000L;
@@ -46,9 +52,13 @@ public final class TracePackets {
                 public void onInteraction(InteractionHand hand, Vec3 position) {}
                 public void onAttack() {
                     Entity target = interact.getTarget(actor.serverLevel());
-                    if (target != null && !DuelTrace.pair(actor, target)) return;
+                    if (DuelTrace.duelActive(actor) && target != null && !DuelTrace.pair(actor, target)) return;
+                    String gate = target == null ? "unresolved"
+                            : !actor.serverLevel().getWorldBorder().isWithinBounds(target.blockPosition()) ? "world_border"
+                            : !actor.canInteractWithEntity(target.getBoundingBox(), 1.0) ? "interaction_range" : "open";
                     DuelTrace.event(actor, target, "in_attack", "netToMainUs", queueUs, "targetResolved", target != null,
-                            "targetEntityId", target == null ? null : target.getId(),
+                            "targetEntityId", ((ClientDuelTraceInteractAccessor) (Object) interact).xlpvp$targetId(),
+                            "packetGate", gate, "pingMs", actor.connection.latency(),
                             "distanceToBox", target == null ? null : Math.sqrt(target.getBoundingBox().distanceToSqr(actor.getEyePosition())),
                             "reach", actor.entityInteractionRange(),
                             "sneaking", interact.isUsingSecondaryAction(), "usingItem", actor.isUsingItem());

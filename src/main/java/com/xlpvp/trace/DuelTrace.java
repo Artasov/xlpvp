@@ -39,14 +39,19 @@ public final class DuelTrace {
     private static long tickStart;
 
     public static boolean active(Player player) {
+        return duelActive(player) || player instanceof ServerPlayer && ArenaCombatTrace.active(player);
+    }
+
+    public static boolean duelActive(Player player) {
         Recording r = current;
         return r != null && player instanceof ServerPlayer && r.contains(player.getUUID());
     }
 
     public static boolean pair(Player player, Entity other) {
         Recording r = current;
-        return r != null && player instanceof ServerPlayer && other instanceof ServerPlayer
-                && player != other && r.contains(player.getUUID()) && r.contains(other.getUUID());
+        return (r != null && player instanceof ServerPlayer && other instanceof ServerPlayer
+                && player != other && r.contains(player.getUUID()) && r.contains(other.getUUID()))
+                || ArenaCombatTrace.pair(player, other);
     }
 
     public static synchronized String start(UUID duel, UUID first, UUID second, String kit) {
@@ -144,7 +149,11 @@ public final class DuelTrace {
 
     public static void event(Player actor, Entity target, String kind, Object... keyValues) {
         Recording r = current;
-        if (r == null || !(actor instanceof ServerPlayer) || !r.contains(actor.getUUID())) return;
+        if (!(actor instanceof ServerPlayer)) return;
+        if (r == null || !r.contains(actor.getUUID())) {
+            ArenaCombatTrace.event(actor, target, kind, keyValues);
+            return;
+        }
         JsonObject fields = new JsonObject();
         fields.addProperty("actor", actor.getUUID().toString());
         if (target != null) fields.addProperty("target", target.getUUID().toString());

@@ -76,7 +76,7 @@ public abstract class FishingHookMixin implements FishingHookAttachment {
     private void xlpvp$observeAirTick(CallbackInfo ci) {
         xlpvp$checkedFlight = true;
         FishingHook hook = (FishingHook) (Object) this;
-        if (hook.getOwner() instanceof ServerPlayer owner && DuelTrace.active(owner)) {
+        if (hook.getOwner() instanceof ServerPlayer owner && DuelTrace.duelActive(owner)) {
             Vec3 motion = hook.getDeltaMovement();
             DuelTrace.event(owner, null, "rod_flight", "hook", hook.getId(), "ageTicks", hook.tickCount,
                     "x", hook.getX(), "y", hook.getY(), "z", hook.getZ(),
